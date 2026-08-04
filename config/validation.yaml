@@ -1,0 +1,19 @@
+version: 1
+input: data/interim/deduplicated/chatml.jsonl
+outputs:
+  accepted: data/interim/validated/chatml.jsonl
+  rejected: data/quarantine/syntax_rejected.jsonl
+  report: data/interim/reports/syntax_validation_report.json
+  work_dir: data/interim/validation/work
+
+kubeconform:
+  image: ghcr.io/yannh/kubeconform@sha256:85dbef6b4b312b99133decc9c6fc9495e9fc5f92293d4ff3b7e1b30f5611823c
+  version: v0.7.0
+  kubernetes_version: 1.36.2
+  strict: true
+  ignore_missing_schemas: false
+
+hadolint:
+  image: hadolint/hadolint@sha256:9a3944b7fddcb947d1ffd90829ac1a6e5c30479223358f249d8b96c7d0019e27
+  version: v2.15.1
+  failure_threshold: warning

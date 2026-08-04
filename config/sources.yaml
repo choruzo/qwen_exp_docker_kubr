@@ -1,0 +1,446 @@
+version: 1
+status: approved
+mass_extraction_allowed: true
+
+project:
+  name: docker-k8s-finetune
+  default_language_policy: bilingual_en_es
+  seed: 3407
+  raw_root: data/raw
+  interim_root: data/interim
+  quarantine_root: data/quarantine
+  processed_root: data/processed
+
+intermediate_record:
+  format: jsonl
+  required_fields:
+    - source
+    - category
+    - raw_content
+    - license
+    - url
+    - retrieved_at
+  provenance_fields:
+    - source_record_id
+    - source_revision
+    - source_path
+    - title
+    - author
+    - attribution
+    - license_url
+    - language
+  allowed_categories:
+    - concepto
+    - comando_cli
+    - generacion_yaml
+    - troubleshooting
+    - dockerfile
+    - arquitectura
+
+defaults:
+  enabled: true
+  force: false
+  idempotency:
+    skip_existing: true
+    manifest_suffix: .manifest.json
+    content_hash: sha256
+  snapshot:
+    resolve_mutable_revision: true
+    record_resolved_revision: true
+    record_retrieved_at_utc: true
+  output_template: data/interim/extracted/{source}.jsonl
+  git:
+    depth: 1
+    submodules: false
+  documentation_chunking:
+    parser: markdown_ast
+    split_on_headings: true
+    min_chars: 300
+    max_chars: 12000
+    overlap_chars: 300
+    preserve_code_fences: true
+    discard_navigation_only: true
+  language:
+    allow: [en, es]
+    min_confidence: 0.80
+    mixed_content_action: quarantine
+  attribution:
+    required: true
+
+license_policy:
+  require_per_record_license: true
+  require_source_url: true
+  unknown_license_action: quarantine
+  conflicting_license_action: quarantine
+  final_dataset_allowlist:
+    - Apache-2.0
+    - MIT
+    - BSD-2-Clause
+    - BSD-3-Clause
+    - ISC
+    - Zlib
+    - Unlicense
+    - CC0-1.0
+    - CC-BY-4.0
+    - CC-BY-SA-4.0
+  the_stack_permissive_allowlist:
+    - Apache-2.0
+    - MIT
+    - BSD-2-Clause
+    - BSD-3-Clause
+    - ISC
+    - Zlib
+    - Unlicense
+    - CC0-1.0
+  attribution_output: data/processed/ATTRIBUTION.jsonl
+  audit_output: data/interim/reports/license_audit.json
+
+category_rules:
+  priority:
+    - troubleshooting
+    - dockerfile
+    - generacion_yaml
+    - comando_cli
+    - arquitectura
+    - concepto
+  troubleshooting:
+    keywords: [error, failed, failure, crash, timeout, oomkill, evicted, pending, debug, diagnose, troubleshoot, incident, postmortem]
+  dockerfile:
+    keywords: [dockerfile, buildkit, multistage, multi-stage, image build]
+  generacion_yaml:
+    keywords: [manifest, yaml, deployment, statefulset, daemonset, service, ingress, configmap, secret, customresource]
+  comando_cli:
+    keywords: [docker run, docker compose, docker build, kubectl, helm, ctr, crictl, nerdctl, argocd]
+  arquitectura:
+    keywords: [architecture, control plane, scheduler, kubelet, runtime, networking, storage, etcd, service mesh, dns]
+  fallback: concepto
+
+sources:
+  # Tier 1: official documentation. Mutable refs are resolved to immutable
+  # commits and written to each extraction manifest.
+  docker_docs:
+    kind: git_markdown
+    tier: 1
+    repository: https://github.com/docker/docs.git
+    web_base_url: https://docs.docker.com
+    ref: main
+    include: ["content/**/*.md"]
+    exclude: ["content/release-lifecycle/**/*.md", "**/_index.md"]
+    license: Apache-2.0
+    license_url: https://github.com/docker/docs/blob/main/LICENSE
+    retrieved_content: documentation
+    normalization: reverse_instruction
+    max_records: 8000
+
+  kubernetes_docs:
+    kind: git_markdown
+    tier: 1
+    repository: https://github.com/kubernetes/website.git
+    web_base_url: https://kubernetes.io/docs
+    ref: main
+    include: ["content/en/docs/**/*.md"]
+    exclude: ["content/en/docs/reference/generated/**/*.md"]
+    license: CC-BY-4.0
+    license_url: https://github.com/kubernetes/website/blob/main/LICENSE
+    retrieved_content: documentation
+    normalization: reverse_instruction
+    max_records: 12000
+
+  helm_docs:
+    kind: git_markdown
+    tier: 1
+    repository: https://github.com/helm/helm-www.git
+    web_base_url: https://helm.sh/docs
+    ref: main
+    include: ["docs/**/*.md", "docs/**/*.mdx"]
+    exclude: ["versioned_docs/**", "i18n/**"]
+    license: MIT
+    license_url: https://github.com/helm/helm-www/blob/main/LICENSE
+    retrieved_content: documentation
+    normalization: reverse_instruction
+    max_records: 2500
+
+  cert_manager_docs:
+    kind: git_markdown
+    tier: 1
+    repository: https://github.com/cert-manager/website.git
+    web_base_url: https://cert-manager.io/docs
+    ref: master
+    include: ["content/docs/**/*.md", "content/docs/**/*.mdx"]
+    exclude: ["content/v*-docs/**"]
+    license: Apache-2.0
+    license_url: https://github.com/cert-manager/website/blob/master/LICENSE
+    retrieved_content: documentation
+    normalization: reverse_instruction
+    max_records: 2500
+
+  istio_docs:
+    kind: git_markdown
+    tier: 1
+    repository: https://github.com/istio/istio.io.git
+    web_base_url: https://istio.io/latest/docs
+    ref: master
+    include: ["content/en/docs/**/*.md"]
+    exclude: ["content/en/docs/releases/**"]
+    license: Apache-2.0
+    license_url: https://github.com/istio/istio.io/blob/master/LICENSE
+    retrieved_content: documentation
+    normalization: reverse_instruction
+    max_records: 3500
+
+  containerd_docs:
+    kind: git_markdown
+    tier: 1
+    repository: https://github.com/containerd/containerd.git
+    web_base_url: https://github.com/containerd/containerd/tree/main/docs
+    ref: main
+    include: ["docs/**/*.md"]
+    license: Apache-2.0
+    license_url: https://github.com/containerd/containerd/blob/main/LICENSE
+    retrieved_content: documentation
+    normalization: reverse_instruction
+    max_records: 2000
+
+  argocd_docs:
+    kind: git_markdown
+    tier: 1
+    repository: https://github.com/argoproj/argo-cd.git
+    web_base_url: https://argo-cd.readthedocs.io
+    ref: master
+    include: ["docs/**/*.md"]
+    exclude: ["docs/proposals/**"]
+    license: Apache-2.0
+    license_url: https://github.com/argoproj/argo-cd/blob/master/LICENSE
+    retrieved_content: documentation
+    normalization: reverse_instruction
+    max_records: 3000
+
+  ingress_nginx_docs:
+    kind: git_markdown
+    tier: 1
+    repository: https://github.com/kubernetes/ingress-nginx.git
+    web_base_url: https://kubernetes.github.io/ingress-nginx
+    ref: main
+    include: ["docs/**/*.md"]
+    license: Apache-2.0
+    license_url: https://github.com/kubernetes/ingress-nginx/blob/main/LICENSE
+    retrieved_content: documentation
+    normalization: reverse_instruction
+    max_records: 2200
+
+  coredns_docs:
+    kind: git_markdown
+    tier: 1
+    repository: https://github.com/coredns/coredns.io.git
+    web_base_url: https://coredns.io
+    ref: master
+    include: ["content/**/*.md"]
+    exclude: ["content/blog/**"]
+    license: Apache-2.0
+    license_url: https://github.com/coredns/coredns.io/blob/master/LICENSE
+    retrieved_content: documentation
+    normalization: reverse_instruction
+    max_records: 1800
+
+  # Pre-built datasets.
+  k8s_instructions:
+    kind: huggingface_dataset
+    tier: 2
+    dataset: substratusai/k8s-instructions
+    revision: main
+    split: train
+    field_map:
+      user: prompt
+      assistant: completion
+    category: generacion_yaml
+    license: Apache-2.0
+    license_url: https://huggingface.co/datasets/substratusai/k8s-instructions
+    normalization: direct_pair
+    max_records: null
+
+  stack_yaml_k8s:
+    kind: huggingface_dataset
+    tier: 2
+    dataset: substratusai/the-stack-yaml-k8s
+    revision: main
+    split: train
+    streaming: true
+    content_field: content
+    repository_fields:
+      - max_stars_repo_name
+      - max_issues_repo_name
+      - max_forks_repo_name
+    license_fields:
+      - max_stars_repo_licenses
+      - max_issues_repo_licenses
+      - max_forks_repo_licenses
+    license: per_record
+    dataset_license: other
+    license_url: https://huggingface.co/datasets/substratusai/the-stack-yaml-k8s
+    per_record_allowlist_ref: license_policy.the_stack_permissive_allowlist
+    unknown_license_action: quarantine
+    category: generacion_yaml
+    normalization: reverse_instruction
+    sampling:
+      strategy: deterministic_hash
+      seed: 3407
+      max_records: 25000
+      diversity_keys: [max_stars_repo_name, apiVersion, kind]
+    never_copy_without_instruction: true
+
+  docker_nl_commands:
+    kind: huggingface_dataset
+    tier: 2
+    dataset: MattCoddity/dockerNLcommands
+    revision: main
+    split: train
+    field_map:
+      user_candidates: [input, command_description, question, instruction]
+      assistant_candidates: [output, command, answer, response]
+    category: comando_cli
+    license: Apache-2.0
+    license_url: https://huggingface.co/datasets/MattCoddity/dockerNLcommands
+    normalization: direct_pair
+    max_records: null
+
+  kubernetes_stackoverflow_questions:
+    kind: huggingface_dataset
+    tier: 2
+    dataset: genaidevops/kubernetes-stackoverflow-questions
+    revision: main
+    split: train
+    git_lfs_data_file: data/data/kubernetes_dump.parquet
+    expected_data_sha256: 690108623319bd248ea0e3dccf72d2cc0bf5e9b8569d839bbbb4f199907b738f
+    field_map:
+      question_candidates: [Question, question, title, body, question_body]
+      answer_candidates: [Answer, accepted_answer, answer, answer_body]
+      author_candidates: [QuestionAuthor, question_author, author]
+      url_candidates: [url, link, question_url]
+    category: troubleshooting
+    license: CC-BY-4.0
+    license_url: https://huggingface.co/datasets/genaidevops/kubernetes-stackoverflow-questions
+    attribution_from_record: true
+    normalization: direct_pair
+    max_records: 20000
+
+  # Explicit quarantine: absent/unclear dataset licenses.
+  componentsoft_kubectl_35k:
+    kind: huggingface_dataset
+    tier: quarantine
+    dataset: ComponentSoft/k8s-kubectl-35k
+    revision: main
+    split: train
+    destination: data/quarantine/componentsoft_kubectl_35k.jsonl
+    license: unknown
+    normalization: none
+    content_fields: [objective, command_name, command, description, syntax, flags, question, chain_of_thought]
+    include_in_final: false
+
+  componentsoft_kubectl_cot_20k:
+    kind: huggingface_dataset
+    tier: quarantine
+    dataset: ComponentSoft/k8s-kubectl-cot-20k
+    revision: main
+    split: train
+    destination: data/quarantine/componentsoft_kubectl_cot_20k.jsonl
+    license: unknown
+    normalization: none
+    content_fields: [objective, command_name, command, description, syntax, flags, question, chain_of_thought]
+    include_in_final: false
+
+  # Docker / Docker Compose / Dockerfile Stack Overflow extraction.
+  stackoverflow_docker:
+    kind: stackoverflow_bigquery
+    tier: 2
+    project_env: GOOGLE_CLOUD_PROJECT
+    dataset: bigquery-public-data.stackoverflow
+    tags: [docker, docker-compose, dockerfile]
+    accepted_answer_first: true
+    fallback_answer: highest_score
+    min_question_score: 1
+    min_answer_score: 1
+    require_answer: true
+    category: troubleshooting
+    license: CC-BY-SA-4.0
+    license_url: https://stackoverflow.com/help/licensing
+    attribution_fields: [question_id, answer_id, owner_user_id, display_name, link]
+    max_records: 20000
+    fallback:
+      kind: stackexchange_data_dump
+      archive_env: STACKOVERFLOW_DUMP_PATH
+
+  # Closed issues. Repository license is checked at extraction time and stored
+  # per record; security issues and unresolved threads are excluded.
+  github_resolved_issues:
+    kind: github_issues
+    tier: 2
+    api: https://api.github.com
+    token_env: GITHUB_TOKEN
+    state: closed
+    updated_since: "2018-01-01T00:00:00Z"
+    exclude_labels_regex: "(?i)(security|vulnerability|cve)"
+    require_nonempty_body: true
+    require_resolution_comment: true
+    resolution_comment_strategy:
+      - explicit_closing_reference
+      - maintainer_marked_answer
+      - highest_positive_reactions
+    minimum_resolution_reactions: 1
+    license_strategy: repository_declared
+    normalization: issue_resolution_pair
+    category: troubleshooting
+    max_records_per_repository: 2500
+    repositories:
+      - name: moby/moby
+        labels_any_regex: "(?i)(kind/bug|area/bug|bug)"
+      - name: kubernetes/kubernetes
+        labels_any_regex: "(?i)(kind/bug|triage/resolved)"
+      - name: containerd/containerd
+        labels_any_regex: "(?i)(bug|kind/bug)"
+      - name: moby/buildkit
+        labels_any_regex: "(?i)(bug|kind/bug)"
+      - name: helm/helm
+        labels_any_regex: "(?i)(bug|type/bug)"
+      - name: cert-manager/cert-manager
+        labels_any_regex: "(?i)(kind/bug|triage/resolved)"
+      - name: kubernetes/ingress-nginx
+        labels_any_regex: "(?i)(kind/bug|triage/resolved)"
+
+  # This repository is only an unlicensed index and moved from GitHub to
+  # Codeberg. Its linked postmortems have independent licenses, so the index is
+  # extracted to quarantine and each target must pass a per-page license audit.
+  kubernetes_failure_stories:
+    kind: failure_story_index
+    tier: quarantine
+    repository: https://codeberg.org/hjacobs/kubernetes-failure-stories.git
+    fallback_repository: https://github.com/hjacobs/kubernetes-failure-stories.git
+    ref: main
+    fallback_ref: master
+    include: ["site/**/*.html", "site/**/*.md"]
+    category: troubleshooting
+    license: unknown
+    destination: data/quarantine/kubernetes_failure_stories_index.jsonl
+    include_in_final: false
+    linked_page_policy:
+      fetch: true
+      respect_robots_txt: true
+      require_explicit_license: true
+      allowed_licenses_ref: license_policy.final_dataset_allowlist
+      save_to: data/interim/extracted/kubernetes_failure_stories.jsonl
+      otherwise: quarantine
+
+self_instruction:
+  enabled_for_normalization: reverse_instruction
+  provider: openai_compatible
+  base_url_env: SYNTHETIC_LLM_BASE_URL
+  api_key_env: SYNTHETIC_LLM_API_KEY
+  model_env: SYNTHETIC_LLM_MODEL
+  temperature: 0.2
+  seed: 3407
+  max_retries: 3
+  require_structured_json: true
+  manual_sample_gate:
+    required: true
+    sample_size: 100
+    approval_file: data/interim/reviews/self_instruction_approved.json
+    scale_after_approval_only: true

@@ -1,0 +1,151 @@
+version: 1
+status: approved
+seed: 3407
+
+input:
+  path: data/interim/validated/chatml.jsonl
+  format: chatml_jsonl
+  required_fields:
+    - messages
+    - meta.source
+    - meta.category
+    - meta.license
+    - meta.content_hash
+    - meta.semantic_cluster_id
+
+output:
+  directory: data/processed
+  files:
+    train: train.jsonl
+    validation: val.jsonl
+    test: test.jsonl
+  assignment_manifest: data/processed/split_manifest.jsonl
+  statistics: data/processed/split_statistics.json
+  leakage_report: data/processed/leakage_report.json
+  hard_test_manifest: data/processed/hard_test_manifest.jsonl
+
+ratios:
+  train: 0.90
+  validation: 0.05
+  test: 0.05
+  tolerance: 0.005
+
+strategy:
+  algorithm: stratified_group_split
+  stratify_by:
+    - meta.category
+    - meta.source
+  group_by:
+    - meta.semantic_cluster_id
+  shuffle: true
+  deterministic: true
+  minimum_records_per_stratum_per_eval_split: 2
+  rare_stratum:
+    threshold: 40
+    action: preserve_category_then_source_best_effort
+  missing_stratum_field_action: fail
+  oversized_group_action: assign_train_and_report
+
+category_constraints:
+  required_categories:
+    - concepto
+    - comando_cli
+    - generacion_yaml
+    - troubleshooting
+    - dockerfile
+    - arquitectura
+  minimum_fraction_each_eval_split:
+    concepto: 0.05
+    comando_cli: 0.10
+    generacion_yaml: 0.15
+    troubleshooting: 0.20
+    dockerfile: 0.10
+    arquitectura: 0.05
+  unmet_constraint_action: fail
+
+hard_test:
+  enabled: true
+  category: troubleshooting
+  fraction_of_test: 0.25
+  minimum_records: 100
+  maximum_records: 500
+  selection_order:
+    - meta.hard_example_is_true
+    - complexity_score_desc
+    - deterministic_hash
+  complexity_score:
+    min_score: 3
+    features:
+      multiple_components: 1
+      multi_step_diagnosis: 1
+      contains_logs_or_events: 1
+      requires_resource_constraints_reasoning: 1
+      networking_or_dns_edge_case: 1
+      storage_or_etcd_edge_case: 1
+      misleading_symptom: 1
+  source_diversity_minimum: 3
+  group_isolation_required: true
+  insufficient_candidates_action: fail
+
+deduplication_before_split:
+  exact:
+    enabled: true
+    hash_field: meta.content_hash
+    canonicalization: nfkc_whitespace_code_fence_aware
+  approximate:
+    enabled: true
+    model: sentence-transformers/paraphrase-multilingual-mpnet-base-v2
+    model_revision: 4328cf26390c98c5e3c738b4460a05b95f4911f5
+    embeddings: data/interim/deduplicated/semantic_embeddings.npz
+    device: auto
+    batch_size: 64
+    similarity: cosine
+    threshold: 0.92
+    compare_fields:
+      - user_content
+      - assistant_content
+    cluster_algorithm: connected_components
+    keep_policy: highest_quality_then_tier_then_deterministic_hash
+  report: data/interim/reports/deduplication_report.json
+
+post_split_leakage_audit:
+  enabled: true
+  pairs:
+    - [train, test]
+    - [train, validation]
+    - [validation, test]
+  exact_hash_check: true
+  embedding_model_ref: deduplication_before_split.approximate.model
+  threshold: 0.92
+  action: move_entire_semantic_cluster_to_train
+  backfill_eval_splits: true
+  backfill_requirements:
+    preserve_strata: true
+    preserve_hard_test: true
+    recheck_until_clean: true
+    max_iterations: 10
+  unresolved_leak_action: fail
+
+benchmark_sampling:
+  freeze_test_set: true
+  frozen_manifest: benchmarks/test_manifest.jsonl
+  llm_judge:
+    sample_size: 150
+    sampling: stratified_by_category_and_source
+    include_hard_minimum: 40
+    seed: 3407
+    manifest: benchmarks/llm_judge_manifest.jsonl
+  out_of_domain:
+    path: benchmarks/fixtures/out_of_domain.jsonl
+    sample_size: 50
+    seed: 3407
+    exclude_from_training: true
+
+validation:
+  ratios_sum_must_equal: 1.0
+  require_all_categories_in_each_split: true
+  require_all_licenses_allowed: true
+  require_attribution_for_cc_records: true
+  require_no_exact_cross_split_duplicates: true
+  require_no_approximate_cross_split_duplicates: true
+  fail_on_empty_split: true

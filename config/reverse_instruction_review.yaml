@@ -1,0 +1,8 @@
+version: 1
+status: pending
+reviewer: null
+reviewed_at: null
+sample_sha256: null
+notes: >-
+  La generación completa está bloqueada hasta revisar manualmente la muestra,
+  fijar status=approved y copiar el SHA-256 exacto de la muestra generada.

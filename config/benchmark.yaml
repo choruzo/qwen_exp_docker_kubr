@@ -1,0 +1,61 @@
+version: 1
+seed: 3407
+
+inputs:
+  test: data/processed/test.jsonl
+  test_manifest: benchmarks/test_manifest.jsonl
+  judge_manifest: benchmarks/llm_judge_manifest.jsonl
+  out_of_domain: benchmarks/fixtures/out_of_domain.jsonl
+
+outputs:
+  baseline: benchmarks/baseline_results.json
+  finetuned_safetensors: benchmarks/finetuned_safetensors_results.json
+  finetuned_gguf: benchmarks/finetuned_gguf_results.json
+  finetuned_combined: benchmarks/finetuned_results.json
+  comparison_report: benchmarks/comparison_report.md
+  loss_chart: benchmarks/training_loss.svg
+  work_dir: benchmarks/work
+
+generation:
+  max_new_tokens: 768
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+  enable_thinking: false
+  timeout_seconds: 300
+
+variants:
+  baseline:
+    backend: unsloth
+    model_path: Modelo/Qwen3.5-4B
+    load_in_4bit: false
+  finetuned_safetensors:
+    backend: unsloth
+    model_path: artifacts/merged
+    load_in_4bit: false
+  finetuned_gguf:
+    backend: openai_compatible
+    base_url_env: GGUF_LLM_BASE_URL
+    api_key_env: GGUF_LLM_API_KEY
+    model_env: GGUF_LLM_MODEL
+
+semantic_similarity:
+  model: sentence-transformers/paraphrase-multilingual-mpnet-base-v2
+  model_revision: 4328cf26390c98c5e3c738b4460a05b95f4911f5
+  device: auto
+  batch_size: 64
+
+syntax_validation:
+  enabled: true
+  config: config/validation.yaml
+
+llm_judge:
+  enabled: true
+  prompt: benchmarks/judge_prompt.md
+  base_url_env: JUDGE_LLM_BASE_URL
+  api_key_env: JUDGE_LLM_API_KEY
+  model_env: JUDGE_LLM_MODEL
+  timeout_seconds: 120
+  max_retries: 3
+  temperature: 0.0
+

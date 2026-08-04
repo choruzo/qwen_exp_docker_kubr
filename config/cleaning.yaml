@@ -1,0 +1,43 @@
+version: 1
+seed: 3407
+
+length:
+  min_chars: 40
+  max_chars: 50000
+
+language:
+  allowed: [en, es]
+  minimum_letters: 80
+  min_probability: 0.80
+  trusted_sources:
+    - docker_docs
+    - kubernetes_docs
+    - helm_docs
+    - cert_manager_docs
+    - istio_docs
+    - containerd_docs
+    - argocd_docs
+    - ingress_nginx_docs
+    - coredns_docs
+  code_categories: [comando_cli, generacion_yaml, dockerfile]
+
+boilerplate:
+  line_patterns:
+    - '^\s*(edit this page|view page source|last modified|copyright)\b.*$'
+    - '^\s*(previous|next)\s*$'
+
+pii:
+  review_sample_size: 100
+  patterns:
+    email: '(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b'
+    private_ipv4: '\b(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})\b'
+    aws_access_key: '\b(?:AKIA|ASIA)[A-Z0-9]{16}\b'
+    github_token: '\b(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255})\b'
+    jwt: '\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b'
+    bearer_token: '(?i)(?<=Bearer )[A-Za-z0-9._~+/-]{16,}={0,2}'
+
+outputs:
+  accepted: data/interim/cleaned/records.jsonl
+  rejected: data/quarantine/clean_rejected.jsonl
+  report: data/interim/reports/cleaning_report.json
+  pii_review: data/interim/reviews/pii_redaction_sample.jsonl

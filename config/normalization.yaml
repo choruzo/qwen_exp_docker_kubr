@@ -1,0 +1,32 @@
+version: 1
+seed: 3407
+system_prompt: >-
+  Eres un asistente experto en Docker, Kubernetes y su ecosistema. Responde con
+  precisión técnica, pasos verificables y configuraciones seguras; no inventes
+  comandos, campos de API ni resultados.
+
+input: data/interim/cleaned/records.jsonl
+outputs:
+  direct_chatml: data/interim/normalized/direct_chatml.jsonl
+  direct_rejected: data/quarantine/normalize_direct_rejected.jsonl
+  reverse_candidates: data/interim/normalized/reverse_candidates_sample.jsonl
+  report: data/interim/reports/normalization_report.json
+
+reverse_instruction:
+  sample_size: 100
+  base_url_env: SYNTHETIC_LLM_BASE_URL
+  api_key_env: SYNTHETIC_LLM_API_KEY
+  model_env: SYNTHETIC_LLM_MODEL
+  timeout_seconds: 120
+  max_retries: 3
+  max_reference_chars: 16000
+  review_config: config/reverse_instruction_review.yaml
+  cache_dir: data/interim/normalized/reverse_cache
+  generated_sample: data/interim/normalized/reverse_generated_sample.jsonl
+  generated_full: data/interim/normalized/reverse_generated_full.jsonl
+  rejected_sample: data/quarantine/reverse_generated_sample_rejected.jsonl
+  rejected_full: data/quarantine/reverse_generated_full_rejected.jsonl
+  prompt: >-
+    Genera una sola instrucción natural y específica cuya respuesta correcta sea
+    exactamente el contenido técnico proporcionado. No menciones que has visto
+    un fragmento, no añadas hechos y devuelve JSON estricto con la clave user.

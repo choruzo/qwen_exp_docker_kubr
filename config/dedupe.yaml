@@ -1,0 +1,40 @@
+version: 1
+seed: 3407
+inputs:
+  - data/interim/normalized/direct_chatml.jsonl
+  - data/interim/normalized/reverse_generated_full.jsonl
+allow_missing_inputs: true
+
+exact:
+  output: data/interim/deduplicated/exact.jsonl
+  duplicates: data/quarantine/exact_duplicates.jsonl
+  report: data/interim/reports/exact_dedupe_report.json
+
+approximate:
+  model: sentence-transformers/paraphrase-multilingual-mpnet-base-v2
+  model_revision: 4328cf26390c98c5e3c738b4460a05b95f4911f5
+  device: auto
+  threshold: 0.92
+  top_k: 50
+  batch_size: 64
+  hnsw_m: 32
+  hnsw_ef_construction: 200
+  hnsw_ef_search: 128
+  output: data/interim/deduplicated/chatml.jsonl
+  embeddings: data/interim/deduplicated/semantic_embeddings.npz
+  duplicates: data/quarantine/approximate_duplicates.jsonl
+  report: data/interim/reports/approximate_dedupe_report.json
+  source_tiers:
+    docker_docs: 1
+    kubernetes_docs: 1
+    helm_docs: 1
+    cert_manager_docs: 1
+    istio_docs: 1
+    containerd_docs: 1
+    argocd_docs: 1
+    ingress_nginx_docs: 1
+    coredns_docs: 1
+    k8s_instructions: 2
+    docker_nl_commands: 2
+    kubernetes_stackoverflow_questions: 2
+    stack_yaml_k8s: 3

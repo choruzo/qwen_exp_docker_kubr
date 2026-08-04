@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docker-k8s-finetune"
+version = "0.1.0"
+description = "Reproducible Docker and Kubernetes instruction-tuning pipeline"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "PyYAML>=6.0.2,<7",
+  "requests>=2.32,<3",
+]
+
+[project.optional-dependencies]
+extract = [
+  "beautifulsoup4>=4.13,<5",
+  "datasets>=3.6,<5",
+  "google-cloud-bigquery>=3.35,<4",
+  "langdetect>=1.0.9,<2",
+]
+dedupe = [
+  "faiss-cpu>=1.10,<2",
+  "numpy>=1.26,<3",
+  "sentence-transformers>=3.4,<6",
+]
+train = [
+  "accelerate>=1.6",
+  "bitsandbytes>=0.46",
+  "datasets>=3.6,<5",
+  "peft>=0.15",
+  "tensorboard>=2.19",
+  "transformers>=4.57",
+  "trl>=0.22",
+  "unsloth",
+]
+test = ["pytest>=8.3,<9", "pytest-cov>=6,<8"]
+
+[project.scripts]
+dkft = "docker_k8s_finetune.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

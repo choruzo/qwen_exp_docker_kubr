@@ -1,0 +1,80 @@
+version: 1
+seed: 3407
+
+model:
+  name: unsloth/Qwen3.5-4B
+  local_path: Modelo/Qwen3.5-4B
+  prefer_local_if_present: true
+  architecture: qwen3_5_vlm_text_only
+  loader: FastVisionModel
+  load_in_4bit: true
+  max_seq_length: 8192
+  fallback_max_seq_length_on_oom: 4096
+  dtype: bfloat16
+
+architecture:
+  text_only: true
+  finetune_vision_layers: false
+  finetune_language_layers: true
+  finetune_attention_modules: true
+  finetune_mlp_modules: true
+
+lora:
+  r: 32
+  alpha: 32
+  dropout: 0.0
+  bias: none
+  # Deliberately omitted: Qwen3.5 mixes full-attention and linear-attention
+  # projections. FastVisionModel selects both families from the flags above.
+  target_modules: auto
+  use_gradient_checkpointing: unsloth
+
+trainer:
+  epochs: 3
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 4
+  effective_batch_size: 16
+  learning_rate: 0.0002
+  scheduler: cosine
+  warmup_ratio: 0.03
+  weight_decay: 0.01
+  optimizer: adamw_8bit
+  eval_strategy: steps
+  eval_steps: 100
+  logging_steps: 10
+  save_steps: 100
+  save_total_limit: 3
+  response_only_loss: true
+  instruction_delimiter: "<|im_start|>user\n"
+  response_delimiter: "<|im_start|>assistant\n"
+  report_to: tensorboard
+  resume_from_checkpoint: auto
+  packing: false
+  oom_fallback:
+    enabled: true
+    per_device_train_batch_size: 1
+    gradient_accumulation_steps: 16
+
+smoke_test:
+  input: data/interim/validated/chatml.jsonl
+  train_records: 8
+  validation_records: 4
+  max_steps: 2
+  max_seq_length: 2048
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 1
+  output_dir: artifacts/smoke
+
+data:
+  train: data/processed/train.jsonl
+  validation: data/processed/val.jsonl
+  test: data/processed/test.jsonl
+
+output:
+  root: artifacts
+  checkpoints: artifacts/checkpoints
+  adapter: artifacts/adapter
+  merged: artifacts/merged
+  gguf: artifacts/gguf
+  metrics: artifacts/metrics
+  gguf_quantizations: [q4_k_m, q8_0]
