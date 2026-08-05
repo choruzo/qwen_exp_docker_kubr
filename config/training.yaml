@@ -69,6 +69,7 @@ data:
   train: data/processed/train.jsonl
   validation: data/processed/val.jsonl
   test: data/processed/test.jsonl
+  split_statistics: data/processed/split_statistics.json
 
 output:
   root: artifacts

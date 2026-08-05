@@ -2,15 +2,22 @@ name: docker-k8s-finetune
 
 services:
   train:
-    image: unsloth/unsloth@sha256:f21629b9ae4ed11231768edfaed0f40d41d85d6ea9a71e8096a3d96ea0311772
+    image: docker-k8s-finetune-train:unsloth-f21629b9-tf5.2-fla0.5.2-faiss1.15
+    build:
+      context: .
+      dockerfile: Dockerfile.train
+      args:
+        UNSLOTH_BASE_IMAGE: unsloth/unsloth@sha256:f21629b9ae4ed11231768edfaed0f40d41d85d6ea9a71e8096a3d96ea0311772
     platform: linux/amd64
+    # Keep the override visible even though Dockerfile.train also resets it.
+    entrypoint: []
     working_dir: /workspace/project
     init: true
     shm_size: "8gb"
     environment:
       PYTHONPATH: /workspace/project/src
       HF_HOME: /workspace/cache/huggingface
-      TRANSFORMERS_CACHE: /workspace/cache/huggingface
+      HF_XET_HIGH_PERFORMANCE: "1"
       TOKENIZERS_PARALLELISM: "false"
       SYNTHETIC_LLM_BASE_URL: ${SYNTHETIC_LLM_BASE_URL:-}
       SYNTHETIC_LLM_API_KEY: ${SYNTHETIC_LLM_API_KEY:-}
@@ -23,7 +30,7 @@ services:
       GGUF_LLM_MODEL: ${GGUF_LLM_MODEL:-}
     volumes:
       - .:/workspace/project
-      - hf-cache:/workspace/cache/huggingface
+      - ./.cache/huggingface:/workspace/cache/huggingface
     deploy:
       resources:
         reservations:
@@ -32,6 +39,3 @@ services:
               count: 1
               capabilities: [gpu]
     command: ["python", "-m", "docker_k8s_finetune.cli", "train"]
-
-volumes:
-  hf-cache:

@@ -3,6 +3,7 @@ seed: 3407
 
 inputs:
   test: data/processed/test.jsonl
+  split_statistics: data/processed/split_statistics.json
   test_manifest: benchmarks/test_manifest.jsonl
   judge_manifest: benchmarks/llm_judge_manifest.jsonl
   out_of_domain: benchmarks/fixtures/out_of_domain.jsonl
@@ -58,4 +59,3 @@ llm_judge:
   timeout_seconds: 120
   max_retries: 3
   temperature: 0.0
-

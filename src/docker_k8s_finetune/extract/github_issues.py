@@ -68,7 +68,14 @@ class GitHubIssuesExtractor(BaseExtractor):
         comments_url = issue.get("comments_url")
         if not comments_url:
             return None
-        comments = self._get(str(comments_url), per_page=100)
+        comments = []
+        page = 1
+        while True:
+            batch = self._get(str(comments_url), per_page=100, page=page)
+            comments.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
         if not comments:
             return None
         trusted = {"OWNER", "MEMBER", "COLLABORATOR"}
@@ -137,4 +144,3 @@ class GitHubIssuesExtractor(BaseExtractor):
         if self.should_skip():
             return self.skipped_result()
         return self.write_records(self._records())
-

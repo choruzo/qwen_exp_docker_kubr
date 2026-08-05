@@ -422,7 +422,8 @@ sources:
     destination: data/quarantine/kubernetes_failure_stories_index.jsonl
     include_in_final: false
     linked_page_policy:
-      fetch: true
+      fetch: false
+      status: blocked_until_each_link_has_machine_verifiable_license
       respect_robots_txt: true
       require_explicit_license: true
       allowed_licenses_ref: license_policy.final_dataset_allowlist
@@ -442,5 +443,5 @@ self_instruction:
   manual_sample_gate:
     required: true
     sample_size: 100
-    approval_file: data/interim/reviews/self_instruction_approved.json
+    approval_file: config/reverse_instruction_review.yaml
     scale_after_approval_only: true

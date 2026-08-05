@@ -15,6 +15,7 @@ from docker_k8s_finetune.train.core import (
     inspect_local_model,
     validate_training_config,
 )
+from docker_k8s_finetune.train.runner import _warmup_steps
 
 
 def _record() -> dict:
@@ -70,6 +71,25 @@ def test_attempts_and_latest_checkpoint_are_deterministic(tmp_path: Path) -> Non
     (output / "checkpoint-9").mkdir(parents=True)
     (output / "checkpoint-100").mkdir()
     assert latest_checkpoint(output).endswith("checkpoint-100")
+
+
+def test_warmup_steps_cover_smoke_and_full_training() -> None:
+    assert _warmup_steps(
+        examples=8,
+        epochs=3,
+        batch_size=1,
+        gradient_accumulation_steps=1,
+        max_steps=2,
+        warmup_ratio=0.03,
+    ) == 1
+    assert _warmup_steps(
+        examples=19_612,
+        epochs=3,
+        batch_size=4,
+        gradient_accumulation_steps=4,
+        max_steps=-1,
+        warmup_ratio=0.03,
+    ) == 111
 
 
 def test_training_config_rejects_manual_targets() -> None:

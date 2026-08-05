@@ -13,6 +13,19 @@ def _mean(result: Mapping[str, Any], category: str, metric: str) -> float | None
     return float(value) if value is not None else None
 
 
+def _overall_mean(result: Mapping[str, Any], metric: str) -> float | None:
+    value = result.get("metrics", {}).get("overall", {}).get(metric, {}).get("mean")
+    return float(value) if value is not None else None
+
+
+def _judge_ci(result: Mapping[str, Any], category: str) -> str:
+    value = result.get("metrics", {}).get("by_category", {}).get(category, {}).get("llm_judge", {})
+    mean, low, high = value.get("mean"), value.get("ci95_low"), value.get("ci95_high")
+    if mean is None or low is None or high is None:
+        return "n/a"
+    return f"{float(mean):.3f} [{float(low):.3f}, {float(high):.3f}]"
+
+
 def _fmt(value: float | None, *, percent: bool = False) -> str:
     if value is None:
         return "n/a"
@@ -63,6 +76,8 @@ def build_markdown(
             regressions.append(f"{category}: similitud semantica {base_sem:.3f} -> {fine_sem:.3f}")
         if base_judge is not None and fine_judge is not None and fine_judge < base_judge:
             regressions.append(f"{category}: juez {base_judge:.3f} -> {fine_judge:.3f}")
+        if base_syntax is not None and fine_syntax is not None and fine_syntax < base_syntax:
+            regressions.append(f"{category}: validez sintactica {base_syntax:.3f} -> {fine_syntax:.3f}")
 
     lines.extend([
         "",
@@ -94,6 +109,26 @@ def build_markdown(
         f"- Validez YAML: {_fmt(base_yaml, percent=True)} -> {_fmt(fine_yaml, percent=True)} ({_change(base_yaml, fine_yaml)}).",
         f"- Validez Dockerfile: {_fmt(base_docker, percent=True)} -> {_fmt(fine_docker, percent=True)} ({_change(base_docker, fine_docker)}).",
         f"- Fuera de dominio, LLM-juez: {_fmt(base_ood)} -> {_fmt(fine_ood)} ({_change(base_ood, fine_ood)}).",
+        "",
+        "## Incertidumbre del LLM-juez (media e IC95)",
+        "",
+        "| Categoria | Baseline | Fine-tuned | GGUF |",
+        "|---|---:|---:|---:|",
+    ])
+    for category in sorted(REQUIRED_CATEGORIES | {"out_of_domain"}):
+        lines.append(
+            f"| {category} | {_judge_ci(baseline, category)} | {_judge_ci(finetuned, category)} "
+            f"| {_judge_ci(gguf, category)} |"
+        )
+    lines.extend([
+        "",
+        "## Rendimiento en el hardware evaluado",
+        "",
+        "| Variante | Latencia media (s) | Tokens/s medios |",
+        "|---|---:|---:|",
+        f"| Baseline | {_fmt(_overall_mean(baseline, 'latency_seconds'))} | {_fmt(_overall_mean(baseline, 'tokens_per_second'))} |",
+        f"| Fine-tuned safetensors | {_fmt(_overall_mean(finetuned, 'latency_seconds'))} | {_fmt(_overall_mean(finetuned, 'tokens_per_second'))} |",
+        f"| Fine-tuned GGUF | {_fmt(_overall_mean(gguf, 'latency_seconds'))} | {_fmt(_overall_mean(gguf, 'tokens_per_second'))} |",
     ])
     if loss_chart_path:
         lines.extend(["", "## Curvas de entrenamiento", "", f"![Loss train/validation]({loss_chart_path})"])
@@ -167,6 +202,9 @@ def run_report(
         if result.get("provisional") and not allow_provisional:
             raise PipelineError(f"Refusing to report provisional benchmark: {variant}")
         results[variant] = result
+    test_hashes = {str(result.get("split_test_sha256") or "") for result in results.values()}
+    if len(test_hashes) != 1 or "" in test_hashes:
+        raise PipelineError("Benchmark variants were not run against the same frozen test split")
 
     chart = root / str(config["outputs"]["loss_chart"])
     trainer_states = sorted(

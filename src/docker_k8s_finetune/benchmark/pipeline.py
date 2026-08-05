@@ -6,7 +6,7 @@ from typing import Any
 
 from ..config import load_yaml
 from ..errors import PipelineError
-from ..io import atomic_write_json, read_jsonl
+from ..io import atomic_write_json, file_sha256, read_jsonl
 from ..schema import utc_now_iso
 from .backends import build_backend
 from .core import aggregate_results, exact_match, prompt_messages, role_content
@@ -22,10 +22,22 @@ def _load_manifest(path: Path) -> list[dict[str, Any]]:
     return values
 
 
-def _load_benchmark_records(config: dict[str, Any], root: Path, limit: int | None) -> list[dict[str, Any]]:
+def _load_benchmark_records(
+    config: dict[str, Any], root: Path, limit: int | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     test_path = root / str(config["inputs"]["test"])
     if not test_path.is_file():
         raise PipelineError(f"Held-out test set does not exist: {test_path}")
+    statistics_path = root / str(config["inputs"]["split_statistics"])
+    if not statistics_path.is_file():
+        raise PipelineError(f"Split statistics do not exist: {statistics_path}")
+    try:
+        split_statistics = json.loads(statistics_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PipelineError(f"Cannot read split statistics: {exc}") from exc
+    expected_test_hash = split_statistics.get("outputs", {}).get("test", {}).get("sha256")
+    if not expected_test_hash or file_sha256(test_path) != expected_test_hash:
+        raise PipelineError("Held-out test set does not match split_statistics.json")
     by_hash = {str(record["meta"]["content_hash"]): record for record in read_jsonl(test_path)}
     manifest = _load_manifest(root / str(config["inputs"]["test_manifest"]))
     manifest_hashes = [str(item["content_hash"]) for item in manifest]
@@ -38,7 +50,7 @@ def _load_benchmark_records(config: dict[str, Any], root: Path, limit: int | Non
     ood = list(read_jsonl(ood_path)) if ood_path.is_file() else []
     if not ood:
         raise PipelineError(f"Out-of-domain fixture is missing or empty: {ood_path}")
-    return selected + ood
+    return selected + ood, split_statistics
 
 
 def _output_path(config: dict[str, Any], variant: str, root: Path) -> Path:
@@ -71,7 +83,7 @@ def run_benchmark(
     config = load_yaml(root / config_path)
     if variant not in config["variants"]:
         raise PipelineError(f"Unknown benchmark variant: {variant}")
-    input_records = _load_benchmark_records(config, root, limit)
+    input_records, split_statistics = _load_benchmark_records(config, root, limit)
     backend = build_backend(config["variants"][variant], root)
     results: list[dict[str, Any]] = []
     for index, record in enumerate(input_records, start=1):
@@ -152,7 +164,10 @@ def run_benchmark(
         "created_at": utc_now_iso(),
         "variant": variant,
         "backend": config["variants"][variant],
-        "provisional": bool(limit is not None or skip_judge or skip_syntax),
+        "provisional": bool(
+            split_statistics.get("provisional") or limit is not None or skip_judge or skip_syntax
+        ),
+        "split_test_sha256": split_statistics["outputs"]["test"]["sha256"],
         "generation": config["generation"],
         "metrics": aggregate_results(results),
         "records": results,

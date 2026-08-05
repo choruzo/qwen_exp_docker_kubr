@@ -10,7 +10,7 @@ import numpy as np
 
 from ..config import load_yaml
 from ..errors import PipelineError
-from ..io import atomic_write_json, atomic_write_jsonl, content_hash, read_jsonl
+from ..io import atomic_write_json, atomic_write_jsonl, content_hash, file_sha256, read_jsonl
 
 
 def semantic_text(record: Mapping[str, Any]) -> str:
@@ -163,6 +163,10 @@ def run_approximate_dedupe(
         "device": device,
         "threshold": float(approximate["threshold"]),
         "top_k": top_k,
+        "input": {
+            "path": input_path.relative_to(root).as_posix(),
+            "sha256": file_sha256(input_path),
+        },
         "counts": {"input": len(records), "kept": kept, "removed": removed, "clusters": len(components)},
         "cluster_size_histogram": {str(key): value for key, value in sorted(cluster_sizes.items())},
         "removed_by_source": dict(sorted(removed_by_source.items())),

@@ -5,6 +5,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+from ..completeness import assess_pipeline_completeness
 from ..config import load_yaml, validate_splits_config
 from ..errors import PipelineError
 from ..io import atomic_write_json, atomic_write_jsonl, read_jsonl
@@ -157,6 +158,7 @@ def _write_datasheet(
         f"- Estrategia: {config['strategy']['algorithm']}",
         f"- Fugas exactas y semanticas: verificadas en {config['output']['leakage_report']}",
         f"- Registros CC BY/CC BY-SA sin atribucion: {missing_attribution}",
+        f"- Estado: {'PROVISIONAL' if statistics.get('provisional') else 'FINAL'}",
         "",
         "## Splits",
         "",
@@ -197,11 +199,18 @@ def _write_datasheet(
 
 def run_split(
     *, config_path: Path = Path("config/splits.yaml"), root: Path = Path("."),
-    skip_semantic_audit: bool = False,
+    skip_semantic_audit: bool = False, allow_provisional: bool = False,
 ) -> dict[str, Any]:
     root = root.resolve()
     config = load_yaml(root / config_path)
     validate_splits_config(config, require_approved=True)
+    completeness = assess_pipeline_completeness(root=root)
+    if not completeness["ready_for_final_split"] and not allow_provisional:
+        codes = ", ".join(sorted({str(item["code"]) for item in completeness["issues"]}))
+        raise PipelineError(
+            f"Refusing final split because upstream lineage is incomplete: {codes}. "
+            "Use --allow-provisional only for diagnostics."
+        )
     input_path = root / config["input"]["path"]
     if not input_path.exists():
         raise PipelineError(f"Validated split input does not exist: {input_path}")
@@ -371,6 +380,8 @@ def run_split(
     statistics = {
         "seed": seed,
         "total": total,
+        "provisional": bool(skip_semantic_audit or not completeness["ready_for_final_split"]),
+        "pipeline_completeness": completeness,
         "splits": split_statistics(records_by_split),
         "outputs": output_hashes,
         "hard_test": {"count": len(hard_manifest), "sources": sorted(hard_sources)},

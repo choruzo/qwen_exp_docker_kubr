@@ -8,7 +8,7 @@ from typing import Any, Iterator, Mapping
 
 from ..config import load_yaml
 from ..errors import PipelineError
-from ..io import atomic_write_json, atomic_write_jsonl, content_hash, read_jsonl, stable_json
+from ..io import atomic_write_json, atomic_write_jsonl, content_hash, file_sha256, read_jsonl, stable_json
 
 
 def canonical_content(record: Mapping[str, Any]) -> str:
@@ -76,6 +76,10 @@ def run_exact_dedupe(
     report = {
         "version": int(config["version"]),
         "inputs": [path.relative_to(root).as_posix() for path in existing],
+        "input_files": [
+            {"path": path.relative_to(root).as_posix(), "sha256": file_sha256(path)}
+            for path in existing
+        ],
         "missing_inputs": [path.relative_to(root).as_posix() for path in missing],
         "counts": {"input": sum(input_by_source.values()), "kept": kept, "removed": removed},
         "input_by_source": dict(sorted(input_by_source.items())),

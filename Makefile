@@ -1,6 +1,6 @@
 PYTHON ?= python
 
-.PHONY: install validate test extract extract-dry-run clean normalize dedupe split train-preflight train-smoke train benchmark-baseline benchmark-finetuned benchmark-gguf report
+.PHONY: install validate test status extract extract-dry-run clean normalize dedupe split train-preflight train-smoke train benchmark-baseline benchmark-finetuned benchmark-gguf report
 
 install:
 	$(PYTHON) -m pip install -e ".[extract,dedupe,test]"
@@ -10,6 +10,9 @@ validate:
 
 test:
 	$(PYTHON) -m pytest
+
+status:
+	$(PYTHON) -m docker_k8s_finetune.cli pipeline-status
 
 extract-dry-run:
 	$(PYTHON) -m docker_k8s_finetune.cli extract --dry-run
@@ -33,16 +36,16 @@ train-preflight:
 	$(PYTHON) -m docker_k8s_finetune.cli train --smoke-test --preflight --no-export
 
 train-smoke:
-	docker compose -f compose.train.yaml run --rm train python -m docker_k8s_finetune.cli train --smoke-test --no-export
+	docker compose -f compose.train.yaml run --build --rm train python -m docker_k8s_finetune.cli train --smoke-test --no-export
 
 train:
-	docker compose -f compose.train.yaml run --rm train
+	docker compose -f compose.train.yaml run --build --rm train
 
 benchmark-baseline:
-	docker compose -f compose.train.yaml run --rm train python -m docker_k8s_finetune.cli benchmark --variant baseline
+	docker compose -f compose.train.yaml run --build --rm train python -m docker_k8s_finetune.cli benchmark --variant baseline
 
 benchmark-finetuned:
-	docker compose -f compose.train.yaml run --rm train python -m docker_k8s_finetune.cli benchmark --variant finetuned_safetensors
+	docker compose -f compose.train.yaml run --build --rm train python -m docker_k8s_finetune.cli benchmark --variant finetuned_safetensors
 
 benchmark-gguf:
 	$(PYTHON) -m docker_k8s_finetune.cli benchmark --variant finetuned_gguf

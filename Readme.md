@@ -14,10 +14,19 @@ haya sido generado sobre el test congelado.
 - Docker Desktop con backend WSL2 y acceso a la GPU NVIDIA.
 - Pesos originales en Modelo/Qwen3.5-4B.
 - Espacio para checkpoints, modelo fusionado y GGUF en el directorio artifacts.
+- Al menos 50 GB para el disco de Docker si se usa la imagen oficial de
+  Unsloth. La imagen derivada validada ocupa aproximadamente 42 GB por si sola,
+  por lo que un limite de 20 GB no es compatible con esta ruta.
 
-Se usa la imagen oficial de Unsloth fijada por digest en compose.train.yaml. Es
-la ruta elegida para Blackwell porque incluye el stack CUDA/PyTorch preparado y
-evita recompilar xformers para sm_120 en Windows.
+Se usa la imagen oficial de Unsloth fijada por digest como base de
+Dockerfile.train. Es la ruta elegida para Blackwell porque incluye el stack
+CUDA/PyTorch preparado y evita recompilar xformers para sm_120 en Windows. La
+imagen base trae Transformers 4.57.6, que no reconoce Qwen3.5; la capa derivada
+instala la version 5.2.0 exigida por la receta oficial de Unsloth, junto con
+flash-linear-attention 0.5.2, torchao 0.16.0 (compatible con Torch 2.10),
+sentence-transformers 5.2.0 y FAISS 1.15.0. Tambien anula el entrypoint que
+haria chmod recursivo sobre todo el modelo y los datasets. La cache persistente
+se guarda en .cache/huggingface mediante bind mount y queda fuera de Git.
 
 ## Instalacion y comprobaciones
 
@@ -26,6 +35,14 @@ evita recompilar xformers para sm_120 en Windows.
     venv\Scripts\python -m docker_k8s_finetune.cli config-validate
     venv\Scripts\python -m pytest
     docker compose -f compose.train.yaml config --quiet
+    docker compose -f compose.train.yaml build train
+    make status
+
+`make status` verifica hashes y linaje de todas las etapas. Devuelve un codigo
+distinto de cero y enumera los bloqueos mientras falte una fuente, la revision
+manual de reverse-instruction o un artefacto intermedio. El split final y el
+entrenamiento completo rechazan esas entradas incompletas; la excepcion
+`--allow-provisional` queda reservada a diagnosticos explicitos.
 
 ## Pipeline de datos
 
@@ -69,6 +86,9 @@ Fuentes que requieren credenciales:
 
 - GitHub issues: GITHUB_TOKEN.
 - Stack Overflow Docker via BigQuery: GOOGLE_CLOUD_PROJECT y credenciales ADC.
+
+La generacion reverse-instruction requiere ademas SYNTHETIC_LLM_BASE_URL y
+SYNTHETIC_LLM_MODEL, seguida de la aprobacion manual descrita arriba.
 
 Las fuentes sin licencia confirmada permanecen en data/quarantine.
 

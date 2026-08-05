@@ -3,6 +3,8 @@ Modelo/
 
 __pycache__/
 .pytest_cache/
+.cache/
+unsloth_compiled_cache/
 *.egg-info/
 
 data/raw/

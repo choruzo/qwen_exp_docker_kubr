@@ -8,7 +8,7 @@ from typing import Any
 
 from ..config import load_yaml
 from ..errors import PipelineError
-from ..io import atomic_write_json, atomic_write_jsonl, read_jsonl
+from ..io import atomic_write_json, atomic_write_jsonl, file_sha256, read_jsonl
 from .core import assistant_content, extract_dockerfile, extract_yaml, parse_json_output
 
 
@@ -172,6 +172,7 @@ def run_syntax_validation(
     report = {
         "version": int(config["version"]),
         "input": input_path.relative_to(root).as_posix(),
+        "input_sha256": file_sha256(input_path),
         "provisional_input_override": input_override is not None,
         "tools": {
             "kubeconform": config["kubeconform"],

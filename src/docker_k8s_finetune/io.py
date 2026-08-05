@@ -18,6 +18,14 @@ def content_hash(value: str | bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def file_sha256(path: str | Path, *, chunk_size: int = 1024 * 1024) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        while chunk := handle.read(chunk_size):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def read_jsonl(path: str | Path) -> Iterator[dict[str, Any]]:
     with Path(path).open("r", encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, start=1):
@@ -74,4 +82,3 @@ def atomic_write_json(path: str | Path, value: Mapping[str, Any]) -> None:
         except FileNotFoundError:
             pass
         raise
-

@@ -31,6 +31,14 @@ def command_config_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_pipeline_status(args: argparse.Namespace) -> int:
+    from .completeness import assess_pipeline_completeness
+
+    result = assess_pipeline_completeness(verify_hashes=not args.no_verify_hashes)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0 if result["ready_for_final_split"] else 1
+
+
 def command_extract(args: argparse.Namespace) -> int:
     from .extract.runner import run_extraction
 
@@ -103,6 +111,7 @@ def command_split(args: argparse.Namespace) -> int:
     result = run_split(
         config_path=Path(args.config),
         skip_semantic_audit=args.skip_semantic_audit,
+        allow_provisional=args.allow_provisional,
     )
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0
@@ -155,6 +164,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verbose", action="store_true")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    status_parser = subparsers.add_parser("pipeline-status", help="Audit end-to-end lineage and final-split readiness")
+    status_parser.add_argument("--no-verify-hashes", action="store_true")
+    status_parser.set_defaults(handler=command_pipeline_status)
+
     config_parser = subparsers.add_parser("config-validate", help="Validate all YAML configuration files")
     config_parser.add_argument("--config-dir", default="config")
     config_parser.set_defaults(handler=command_config_validate)
@@ -195,6 +208,7 @@ def build_parser() -> argparse.ArgumentParser:
     split_parser = subparsers.add_parser("split", help="Create stratified train/validation/test splits")
     split_parser.add_argument("--config", default="config/splits.yaml")
     split_parser.add_argument("--skip-semantic-audit", action="store_true", help="Provisional use only")
+    split_parser.add_argument("--allow-provisional", action="store_true", help="Allow incomplete upstream lineage")
     split_parser.set_defaults(handler=command_split)
 
     train_parser = subparsers.add_parser("train", help="Run text-only QLoRA with Qwen3.5-4B")

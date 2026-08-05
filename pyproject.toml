@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "docker-k8s-finetune"
 version = "0.1.0"
 description = "Reproducible Docker and Kubernetes instruction-tuning pipeline"
-readme = "README.md"
+readme = "Readme.md"
 requires-python = ">=3.10,<3.13"
 dependencies = [
   "PyYAML>=6.0.2,<7",
@@ -31,7 +31,7 @@ train = [
   "datasets>=3.6,<5",
   "peft>=0.15",
   "tensorboard>=2.19",
-  "transformers>=4.57",
+  "transformers==5.2.0",
   "trl>=0.22",
   "unsloth",
 ]

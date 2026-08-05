@@ -48,3 +48,5 @@ def test_report_calls_out_regressions() -> None:
     markdown = build_markdown(_result(0.8), _result(0.7), _result(0.69), loss_chart_path=None)
     assert "regresiones" in markdown
     assert "concepto" in markdown
+    assert "Incertidumbre del LLM-juez" in markdown
+    assert "Rendimiento en el hardware evaluado" in markdown

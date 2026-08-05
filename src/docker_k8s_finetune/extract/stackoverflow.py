@@ -22,6 +22,7 @@ WITH candidate_answers AS (
     a.body AS answer_body,
     a.score AS answer_score,
     a.owner_user_id,
+    u.display_name,
     ROW_NUMBER() OVER (
       PARTITION BY q.id
       ORDER BY IF(a.id = q.accepted_answer_id, 1, 0) DESC, a.score DESC, a.id ASC
@@ -29,6 +30,8 @@ WITH candidate_answers AS (
   FROM `bigquery-public-data.stackoverflow.posts_questions` q
   JOIN `bigquery-public-data.stackoverflow.posts_answers` a
     ON a.parent_id = q.id
+  LEFT JOIN `bigquery-public-data.stackoverflow.users` u
+    ON u.id = a.owner_user_id
   WHERE q.score >= @min_question_score
     AND a.score >= @min_answer_score
     AND EXISTS (
@@ -81,14 +84,19 @@ class StackOverflowBigQueryExtractor(BaseExtractor):
                 url=url,
                 source_record_id=f"q{question_id}-a{answer_id}",
                 title=str(row["title"]),
-                author=str(row["owner_user_id"]) if row["owner_user_id"] is not None else "deleted-user",
-                attribution=f"Stack Overflow question {question_id}, answer {answer_id}",
+                author=str(row["display_name"] or row["owner_user_id"] or "deleted-user"),
+                attribution=(
+                    f"Stack Overflow question {question_id}, answer {answer_id}, "
+                    f"author {row['display_name'] or row['owner_user_id'] or 'deleted-user'}"
+                ),
                 language="en",
                 metadata={
                     "normalization": "direct_pair",
                     "pair": {"user": question, "assistant": answer},
                     "question_score": int(row["question_score"]),
                     "answer_score": int(row["answer_score"]),
+                    "owner_user_id": row["owner_user_id"],
+                    "display_name": row["display_name"],
                     "tags": str(row["tags"]),
                 },
             )

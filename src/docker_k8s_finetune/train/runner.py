@@ -3,11 +3,15 @@ from __future__ import annotations
 import gc
 import json
 import logging
+import math
+import os
 from pathlib import Path
 from typing import Any, Mapping
 
 from ..config import load_yaml
 from ..errors import PipelineError
+from ..io import file_sha256
+from ..schema import utc_now_iso
 from .callbacks import build_vram_callback
 from .core import (
     TrainingAttempt,
@@ -21,6 +25,42 @@ from .core import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _warmup_steps(
+    *, examples: int, epochs: float, batch_size: int, gradient_accumulation_steps: int,
+    max_steps: int, warmup_ratio: float,
+) -> int:
+    if warmup_ratio <= 0:
+        return 0
+    if max_steps > 0:
+        total_steps = max_steps
+    else:
+        batches_per_epoch = math.ceil(examples / batch_size)
+        updates_per_epoch = max(1, math.ceil(batches_per_epoch / gradient_accumulation_steps))
+        total_steps = max(1, math.ceil(updates_per_epoch * epochs))
+    return max(1, math.ceil(total_steps * warmup_ratio))
+
+
+def _verify_final_split(config: Mapping[str, Any], root: Path) -> dict[str, Any]:
+    data = config["data"]
+    statistics_path = root / str(data["split_statistics"])
+    if not statistics_path.is_file():
+        raise PipelineError(f"Final split statistics do not exist: {statistics_path}")
+    try:
+        statistics = json.loads(statistics_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PipelineError(f"Cannot read final split statistics: {exc}") from exc
+    if statistics.get("provisional"):
+        raise PipelineError("Refusing full training on provisional dataset splits")
+    for split_name, data_key in (("train", "train"), ("validation", "validation"), ("test", "test")):
+        path = root / str(data[data_key])
+        expected = statistics.get("outputs", {}).get(split_name, {}).get("sha256")
+        if not path.is_file() or not expected:
+            raise PipelineError(f"Final {split_name} split or its recorded hash is missing")
+        if file_sha256(path) != expected:
+            raise PipelineError(f"Final {split_name} split hash differs from split_statistics.json")
+    return statistics
 
 
 def run_training_preflight(
@@ -48,6 +88,7 @@ def run_training_preflight(
         )
     else:
         data = config["data"]
+        _verify_final_split(config, root)
         train_records = load_chatml(root / str(data["train"]))
         validation_records = load_chatml(root / str(data["validation"]))
         input_path = root / str(data["train"])
@@ -76,12 +117,37 @@ def _dtype(value: str, torch: Any) -> Any:
     return supported[value]
 
 
+def _summarize_vram(path: Path, run_id: str) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    values = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        value = json.loads(line)
+        if value.get("run_id") == run_id:
+            values.append(value)
+    if not values:
+        return None
+    return {
+        "log": str(path),
+        "epochs_recorded": len(values),
+        "peak_allocated_gib": max(float(value["peak_allocated_gib"]) for value in values),
+        "peak_reserved_gib": max(float(value["peak_reserved_gib"]) for value in values),
+        "maximum_device_used_gib": max(float(value["device_used_gib"]) for value in values),
+        "minimum_device_free_gib": min(float(value["device_free_gib"]) for value in values),
+        "device_total_gib": float(values[-1]["device_total_gib"]),
+        "device": values[-1]["device"],
+    }
+
+
 def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt, *, export: bool) -> dict[str, Any]:
     try:
         import torch
+        # Unsloth must patch Transformers/TRL before either library is imported.
+        from unsloth import FastVisionModel
         from datasets import Dataset
         from trl import SFTConfig, SFTTrainer
-        from unsloth import FastVisionModel
         from unsloth.chat_templates import train_on_responses_only
     except ImportError as exc:
         raise PipelineError("Training dependencies are unavailable; run through compose.train.yaml") from exc
@@ -98,6 +164,7 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
         validation_records = load_chatml(smoke_input, limit=validation_limit, offset=int(smoke["train_records"]))
     else:
         data_config = config["data"]
+        _verify_final_split(config, root)
         train_records = load_chatml(root / str(data_config["train"]))
         validation_records = load_chatml(root / str(data_config["validation"]))
     model_ref = resolve_model_reference(config, root)
@@ -129,6 +196,11 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
     trainer_config = config["trainer"]
     metrics_root = root / str(config["output"]["metrics"])
     metrics_root.mkdir(parents=True, exist_ok=True)
+    checkpoint = None if attempt.smoke_test else latest_checkpoint(attempt.output_dir)
+    run_id = utc_now_iso()
+    vram_path = metrics_root / ("vram_smoke.jsonl" if attempt.smoke_test else "vram_by_epoch.jsonl")
+    tensorboard_path = metrics_root / "tensorboard"
+    os.environ["TENSORBOARD_LOGGING_DIR"] = str(tensorboard_path)
     sft_args = SFTConfig(
         output_dir=str(attempt.output_dir),
         num_train_epochs=float(trainer_config["epochs"]),
@@ -138,7 +210,14 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
         gradient_accumulation_steps=attempt.gradient_accumulation_steps,
         learning_rate=float(trainer_config["learning_rate"]),
         lr_scheduler_type=str(trainer_config["scheduler"]),
-        warmup_ratio=float(trainer_config["warmup_ratio"]),
+        warmup_steps=_warmup_steps(
+            examples=len(train_dataset),
+            epochs=float(trainer_config["epochs"]),
+            batch_size=attempt.batch_size,
+            gradient_accumulation_steps=attempt.gradient_accumulation_steps,
+            max_steps=attempt.max_steps,
+            warmup_ratio=float(trainer_config["warmup_ratio"]),
+        ),
         weight_decay=float(trainer_config["weight_decay"]),
         optim=str(trainer_config["optimizer"]),
         eval_strategy=str(trainer_config["eval_strategy"]),
@@ -147,7 +226,6 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
         save_steps=int(trainer_config["save_steps"]),
         save_total_limit=int(trainer_config["save_total_limit"]),
         report_to=str(trainer_config["report_to"]),
-        logging_dir=str(metrics_root / "tensorboard"),
         seed=int(config["seed"]),
         data_seed=int(config["seed"]),
         bf16=str(config["model"]["dtype"]) == "bfloat16",
@@ -162,14 +240,13 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
         train_dataset=train_dataset,
         eval_dataset=validation_dataset,
         args=sft_args,
-        callbacks=[build_vram_callback(metrics_root / "vram_by_epoch.jsonl")],
+        callbacks=[build_vram_callback(vram_path, run_id=run_id, append=checkpoint is not None)],
     )
     trainer = train_on_responses_only(
         trainer,
         instruction_part=str(trainer_config["instruction_delimiter"]),
         response_part=str(trainer_config["response_delimiter"]),
     )
-    checkpoint = None if attempt.smoke_test else latest_checkpoint(attempt.output_dir)
     train_result = trainer.train(resume_from_checkpoint=checkpoint)
     trainer.save_metrics("train", train_result.metrics)
     evaluation_metrics = trainer.evaluate()
@@ -185,6 +262,7 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
         "resumed_from": checkpoint,
         "metrics": train_result.metrics,
         "evaluation_metrics": evaluation_metrics,
+        "vram": _summarize_vram(vram_path, run_id),
     }
     if not export:
         return result

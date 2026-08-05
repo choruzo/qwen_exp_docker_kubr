@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1.7
+
+ARG UNSLOTH_BASE_IMAGE=unsloth/unsloth@sha256:f21629b9ae4ed11231768edfaed0f40d41d85d6ea9a71e8096a3d96ea0311772
+FROM ${UNSLOTH_BASE_IMAGE}
+
+# Qwen3.5 support in the pinned Unsloth release requires Transformers 5.2.0.
+# The upstream image currently ships 4.57.6, so keep this compatibility delta
+# explicit and reproducible instead of mutating containers at runtime.
+RUN uv pip install --python /opt/venv/bin/python --no-cache "transformers==5.2.0" \
+    && uv pip install --python /opt/venv/bin/python --no-cache --no-build-isolation \
+        "flash-linear-attention==0.5.2" \
+    && uv pip install --python /opt/venv/bin/python --no-cache --no-deps \
+        "torchao==0.16.0" \
+    && uv pip install --python /opt/venv/bin/python --no-cache \
+        "faiss-cpu==1.15.0" \
+    && /opt/venv/bin/python -c "from importlib.metadata import version; assert version('transformers') == '5.2.0'; assert version('flash-linear-attention') == '0.5.2'; assert version('torchao') == '0.16.0'; assert version('faiss-cpu') == '1.15.0'; assert version('sentence-transformers') == '5.2.0'"
+
+# The upstream entrypoint chmods the whole bind-mounted workspace recursively.
+ENTRYPOINT []
