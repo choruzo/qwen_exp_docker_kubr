@@ -516,3 +516,35 @@ Cada checkpoint de diagnóstico ocupó 763 MiB; el perfil completo conserva tres
 Reservar al menos 40 GiB para checkpoints, adaptador, modelo fusionado y GGUF,
 además de imagen, modelo base y datos. El smoke y el diagnóstico prueban el
 camino crítico; no garantizan que las tres épocas terminen sin otro fallo ROCm.
+
+### Horario diario del entrenamiento ROCm
+
+La corrida `qwen35-rocm-full-patched` se detiene diariamente a las **23:30** y
+se reanuda a las **10:30**, hora `Europe/Madrid`. Dos temporizadores `systemd`
+de usuario ejecutan `scripts/schedule_rocm_training.sh`. El usuario tiene
+`Linger=yes`, así que los temporizadores siguen activos tras cerrar la sesión.
+El temporizador de arranque vuelve a comprobar cada 10 minutos durante el día
+por si la GPU estaba ocupada a las 10:30. No arranca fuera del horario.
+
+La parada envía `docker stop --time 15`; puede perder como máximo los pasos
+posteriores al último checkpoint completo (guardado cada 25 pasos). El nuevo
+contenedor usa `--resume-from-latest`, que exige un checkpoint ROCm completo
+con la misma huella de configuración, modelo, datos, perfil y binarios
+hipBLASLt. Si no encuentra uno, falla sin iniciar desde cero. Los logs del
+contenedor anterior se archivan bajo `.cache/rocm-training-schedule/logs/`
+antes de reemplazarlo. Si `training_result.json` ya existe, no se reinicia.
+
+```bash
+systemctl --user list-timers 'qwen35-rocm-*'
+scripts/schedule_rocm_training.sh status
+journalctl --user -u qwen35-rocm-stop.service -u qwen35-rocm-start.service -n 50
+```
+
+Las unidades versionadas están en `systemd/user/`. Para instalarlas en otra
+máquina con el mismo directorio del proyecto:
+
+```bash
+systemctl --user link "$PWD"/systemd/user/qwen35-rocm-{stop,start}.{service,timer}
+systemctl --user daemon-reload
+systemctl --user enable --now qwen35-rocm-stop.timer qwen35-rocm-start.timer
+```

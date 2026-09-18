@@ -133,6 +133,7 @@ def command_train(args: argparse.Namespace) -> int:
         smoke_test=args.smoke_test,
         export=not args.no_export,
         preflight_only=args.preflight,
+        resume_from_latest=args.resume_from_latest,
     )
     print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
     return 0
@@ -246,6 +247,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser.add_argument("--smoke-test", action="store_true")
     train_parser.add_argument("--no-export", action="store_true")
     train_parser.add_argument("--preflight", action="store_true")
+    train_parser.add_argument("--resume-from-latest", action="store_true")
     train_parser.set_defaults(handler=command_train)
 
     benchmark_parser = subparsers.add_parser("benchmark", help="Run the frozen before/after benchmark")

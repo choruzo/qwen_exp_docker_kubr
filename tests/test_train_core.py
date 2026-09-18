@@ -428,7 +428,7 @@ def test_oom_fallback_runs_after_primary_exception_scope(monkeypatch, tmp_path: 
     config["output"]["metrics"] = "artifacts/metrics"
     calls = []
 
-    def fake_train_once(config, root, attempt, *, export):
+    def fake_train_once(config, root, attempt, *, export, resume_from_latest=False):
         calls.append(attempt)
         if len(calls) == 1:
             raise RuntimeError("CUDA out of memory")
@@ -449,7 +449,7 @@ def test_smoke_profile_is_not_reported_as_oom_fallback(monkeypatch, tmp_path: Pa
     config = _config()
     config["output"]["metrics"] = "artifacts/metrics"
 
-    def fake_train_once(config, root, attempt, *, export):
+    def fake_train_once(config, root, attempt, *, export, resume_from_latest=False):
         return {"status": "trained", "training_profile": attempt.profile}
 
     monkeypatch.chdir(tmp_path)
@@ -467,7 +467,7 @@ def test_oom_fallback_reduces_context_only_after_batch_one_oom(monkeypatch, tmp_
     config["output"]["metrics"] = "artifacts/metrics"
     calls = []
 
-    def fake_train_once(config, root, attempt, *, export):
+    def fake_train_once(config, root, attempt, *, export, resume_from_latest=False):
         calls.append(attempt)
         if len(calls) < 3:
             raise RuntimeError("CUDA out of memory")
@@ -496,7 +496,7 @@ def test_oom_fallback_resumes_after_power_loss_without_retrying_failed_profile(
     )
     calls = []
 
-    def fake_train_once(config, root, attempt, *, export):
+    def fake_train_once(config, root, attempt, *, export, resume_from_latest=False):
         calls.append(attempt)
         return {"status": "trained", "training_profile": attempt.profile}
 
@@ -610,3 +610,24 @@ def test_rocm_math_library_provenance_pins_patched_binaries(
     (tmp_path / name).symlink_to(tmp_path / "TensileLibrary_BB_BB_test1_gfx1201.co")
     with pytest.raises(PipelineError, match="points to stock"):
         train_runner._rocm_math_library_provenance()
+
+
+def test_rocm_resume_flag_is_explicit_and_uses_only_primary(monkeypatch, tmp_path: Path) -> None:
+    config = train_runner.load_yaml(Path(__file__).resolve().parents[1] / "config/training.rocm.patched.yaml")
+    calls = []
+
+    def fake_train_once(config, root, attempt, *, export, resume_from_latest=False):
+        calls.append((attempt.profile, resume_from_latest))
+        return {"status": "trained"}
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(train_runner, "load_yaml", lambda path: config)
+    monkeypatch.setattr(train_runner, "_train_once", fake_train_once)
+    train_runner.run_training(export=False, resume_from_latest=True)
+    assert calls == [("primary", True)]
+    assert config["trainer"]["resume_from_checkpoint"] == "none"
+
+    with pytest.raises(PipelineError, match="full training run"):
+        train_runner.run_training(smoke_test=True, resume_from_latest=True)
+    with pytest.raises(PipelineError, match="full training run"):
+        train_runner.run_training(preflight_only=True, resume_from_latest=True)

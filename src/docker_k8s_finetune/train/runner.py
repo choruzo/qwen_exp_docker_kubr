@@ -349,7 +349,10 @@ def _summarize_vram(path: Path, run_id: str) -> dict[str, Any] | None:
     }
 
 
-def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt, *, export: bool) -> dict[str, Any]:
+def _train_once(
+    config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
+    *, export: bool, resume_from_latest: bool = False,
+) -> dict[str, Any]:
     try:
         import torch
         # Unsloth must patch Transformers/TRL before either library is imported.
@@ -495,8 +498,10 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
     metrics_root = root / str(config["output"]["metrics"])
     metrics_root.mkdir(parents=True, exist_ok=True)
     checkpoint = None
-    if not attempt.smoke_test and trainer_config["resume_from_checkpoint"] == "auto":
+    if resume_from_latest or (not attempt.smoke_test and trainer_config["resume_from_checkpoint"] == "auto"):
         checkpoint = latest_checkpoint(attempt.output_dir, expected_fingerprint=checkpoint_fingerprint)
+        if resume_from_latest and checkpoint is None:
+            raise PipelineError("No complete checkpoint matches this ROCm training contract")
     run_id = utc_now_iso()
     vram_path = metrics_root / (
         str(smoke.get("vram_name", "vram_smoke.jsonl")) if attempt.smoke_test else "vram_by_epoch.jsonl"
@@ -664,15 +669,19 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
 
 def run_training(
     *, config_path: Path = Path("config/training.yaml"), smoke_test: bool = False,
-    export: bool = True, preflight_only: bool = False,
+    export: bool = True, preflight_only: bool = False, resume_from_latest: bool = False,
 ) -> dict[str, Any]:
+    if resume_from_latest and (smoke_test or preflight_only):
+        raise PipelineError("Checkpoint resume requires a full training run")
     if preflight_only:
         return run_training_preflight(config_path=config_path, smoke_test=smoke_test)
     root = Path.cwd()
     config = load_yaml(config_path)
     validate_training_config(config)
+    if resume_from_latest and config.get("runtime", {}).get("accelerator") != "rocm":
+        raise PipelineError("Explicit checkpoint resume is only enabled for ROCm")
     attempts = [build_attempt(config, root, smoke_test=smoke_test)]
-    if not smoke_test and config["trainer"]["oom_fallback"]["enabled"]:
+    if not smoke_test and not resume_from_latest and config["trainer"]["oom_fallback"]["enabled"]:
         attempts.extend(
             build_attempt(config, root, smoke_test=False, fallback_index=index)
             for index in range(len(config["trainer"]["oom_fallback"]["profiles"]))
@@ -703,6 +712,7 @@ def run_training(
                 root,
                 attempt,
                 export=export and not smoke_test,
+                resume_from_latest=resume_from_latest,
             )
             if not smoke_test and (attempt.profile != "primary" or oom_profiles):
                 result["oom_fallback_used"] = True
