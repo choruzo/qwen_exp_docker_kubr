@@ -440,6 +440,10 @@ def validate_training_config(config: Mapping[str, Any]) -> None:
     accelerator = runtime.get("accelerator", "cuda")
     if accelerator not in ("cuda", "rocm"):
         raise PipelineError("Training accelerator must be cuda or rocm")
+    if "require_hipblaslt_override" in runtime and type(runtime["require_hipblaslt_override"]) is not bool:
+        raise PipelineError("require_hipblaslt_override must be a boolean")
+    if runtime.get("require_hipblaslt_override") and accelerator != "rocm":
+        raise PipelineError("hipBLASLt override can only be required for ROCm")
     if accelerator == "rocm":
         if model.get("load_in_4bit") is not False or model.get("dtype") != "bfloat16":
             raise PipelineError("ROCm profile requires unquantized BF16 LoRA")

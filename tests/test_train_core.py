@@ -585,3 +585,28 @@ def test_rocm_validation_redaction_is_exactly_pinned(tmp_path: Path) -> None:
     config["data"]["validation_redaction"]["redacted_content_hash"] = "wrong"
     with pytest.raises(PipelineError, match="record hashes"):
         train_runner._verify_final_split(config, tmp_path)
+
+
+def test_rocm_math_library_provenance_pins_patched_binaries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("HIPBLASLT_TENSILE_LIBPATH", raising=False)
+    with pytest.raises(PipelineError, match="requires a patched hipBLASLt overlay"):
+        train_runner._rocm_math_library_provenance(required=True)
+    monkeypatch.setenv("HIPBLASLT_TENSILE_LIBPATH", str(tmp_path))
+    monkeypatch.setenv("PYTORCH_HIP_ALLOC_CONF", "roundup_power2_divisions:16")
+    for index in range(4):
+        stem = f"TensileLibrary_BB_BB_test{index}_gfx1201"
+        (tmp_path / f"{stem}.co").write_bytes(f"object-{index}".encode())
+        (tmp_path / f"{stem}.dat").write_bytes(f"logic-{index}".encode())
+
+    provenance = train_runner._rocm_math_library_provenance()
+    assert provenance["environment"]["PYTORCH_HIP_ALLOC_CONF"] == "roundup_power2_divisions:16"
+    assert len(provenance["patched_files_sha256"]) == 8
+    name = "TensileLibrary_BB_BB_test0_gfx1201.co"
+    assert provenance["patched_files_sha256"][name] == hashlib.sha256(b"object-0").hexdigest()
+
+    (tmp_path / name).unlink()
+    (tmp_path / name).symlink_to(tmp_path / "TensileLibrary_BB_BB_test1_gfx1201.co")
+    with pytest.raises(PipelineError, match="points to stock"):
+        train_runner._rocm_math_library_provenance()

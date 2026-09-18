@@ -1,0 +1,4 @@
+services:
+  train:
+    environment:
+      HIPBLASLT_TENSILE_LIBPATH: /workspace/project/.cache/hipblaslt-gfx1201-bf16-overlay

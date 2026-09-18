@@ -1,0 +1,94 @@
+diff --git a/projects/hipblaslt/tensilelite/Tensile/KernelWriterAssembly.py b/projects/hipblaslt/tensilelite/Tensile/KernelWriterAssembly.py
+index b795106..f56a1d9 100644
+--- a/projects/hipblaslt/tensilelite/Tensile/KernelWriterAssembly.py
++++ b/projects/hipblaslt/tensilelite/Tensile/KernelWriterAssembly.py
+@@ -7670,60 +7670,18 @@ class KernelWriterAssembly(KernelWriter):
+     ########################################
+ 
+     if isTr:
+-      # DirectToVgpr case, we need to calculate max address
+-      module.addComment1("Max read address offset for GLTr%s"%tc)
+-
++      # Backport of ROCm/rocm-libraries#8909 for the 7.2.4 TensileLite API.
++      # global_load_tr does not enforce the SRD num_records bound in hardware.
++      module.addComment1("Max read address offset for GLTr%s (= Srd+2 num_records - bytesPerLoad)"%tc)
+       maxGroVgpr = self.vgprPool.checkOut(1)
+-
+-      tmpVgpr = self.vgprPool.checkOutAligned(2, 2, 'tmpVgpr')
+-      tmpVgprRes = ContinuousRegister(tmpVgpr, 2)
+-
+-      tmp = self.vgprPool.checkOut(1)
+-      tmp2 = self.vgprPool.checkOut(1)
+-
+-      WvG_M = kernel["MIWaveGroup"][0]
+-      numKr = kernel["MatrixInstK"] // tP["glvw"]
+-
+-      module.addComment0("calc last tile offset")
+-      module.add(vectorStaticDivide(maxGroVgpr, "Serial", kernel["WavefrontSize"], tmpVgprRes))
+-      if tP["isA"]:
+-        module.add(VAndB32(dst=vgpr(maxGroVgpr), src0=hex(WvG_M-1), src1=vgpr(maxGroVgpr), comment="GLTr%s: wave_id (along_M) mod MIWG[0]"%tc))
+-        module.add(VMulU32U24(dst=vgpr(maxGroVgpr), src0=numKr, src1=vgpr(maxGroVgpr), comment="GLTr%s: wave_id (along_M) *= numKr"%tc))
+-      elif tP["isB"]:
+-        # NB:
+-        #   Calc of w_id is: /= MIWG[0], not %= MIWG[1]
+-        module.add(VLShiftRightB32(dst=vgpr(maxGroVgpr), shiftHex=log2(WvG_M), src=vgpr(maxGroVgpr), comment="GLTr%s: wave_id (along_N) /= MIWG[0]"%tc))
+-        module.add(VMulU32U24(dst=vgpr(maxGroVgpr), src0=numKr, src1=vgpr(maxGroVgpr), comment="GLTr%s: wave_id (along_N) *= numKr"%tc))
+-
+-      module.add(VBfeU32(dst=vgpr(tmp2), src0=vgpr("Serial"), src1=tP["bpeGR"]+1, src2=1, comment="GLTr%s: offset for the right half of the tile"%(tc)))
+-      module.add(VAddU32(dst=vgpr(maxGroVgpr), src0=vgpr(tmp2), src1=vgpr(maxGroVgpr), comment="GLTr%s: wave_id += offset for the right half of the tile"%(tc)))
+-
+-      with self.allocTmpSgpr(1) as tmpSgprInfo:
+-        if tP["glvw"] > 1:
+-          if tP["tlu"]:
+-            module.add(vectorStaticMultiply(vgpr(maxGroVgpr), vgpr(maxGroVgpr), tP["glvw"], tmpSgprInfo, comment="GLTr%s: tile * glvw(%u)"%(tc, tP["glvw"])))
+-          else:
+-            module.add(vectorStaticMultiply(vgpr(maxGroVgpr), vgpr(maxGroVgpr), tP["glvw"], tmpSgprInfo, comment="GLTr%s: unroll * glvw(%u)"%(tc, tP["glvw"])))
+-
+-      strideIdx = tP["lsc"] if tP["tlu"] else tP["lsp"]
+-      stride = kernel[strideIdx]
+-      module.add(VAddU32(dst=vgpr(maxGroVgpr), src0=vgpr(maxGroVgpr), src1=stride*(tP["nrt"]-1)))
+-
+-      module.addComment0("calc last unroll offset")
+-      module.add(VMovB32(dst=vgpr(tmp), src=sgpr("SizesSum+%u"%self.states.unrollIdx)))
++      bytesPerLoad = int(tP["bpeGR"] * tP["glvw"])
+       with self.allocTmpSgpr(1) as tmpSgprInfo:
+-        module.add(vectorStaticRemainder(tmp, tmp2, tmp, kernel["DepthU"], tmpVgprRes, tmpSgprInfo))
+-
+-      module.addComment0("final offset")
+-      module.add(VSubU32(dst=vgpr(tmp2), src0=vgpr(tmp2), src1=1, comment="GLTr%s: unroll idx - 1"%(tc)))
+-      bfArgs = (maxGroVgpr, maxGroVgpr, tmp2, tmp)
+-      module.add(MacroInstruction(name="GLOBAL_OFFSET_%s"%tc, args=bfArgs))
+-
++        limitSgpr = tmpSgprInfo.idx
++        module.add(SSubU32(dst=sgpr(limitSgpr), src0=sgpr("Srd%s+2"%tc), src1=bytesPerLoad, comment="GLTr%s: tensor-end byte limit - bytesPerLoad(%u)"%(tc, bytesPerLoad)))
++        module.add(SCSelectB32(dst=sgpr(limitSgpr), src0=0, src1=sgpr(limitSgpr), comment="GLTr%s: saturate at 0 if the subtract borrowed"%tc))
++        module.add(SMinU32(dst=sgpr(limitSgpr), src0=sgpr(limitSgpr), src1=0x7FFFFFFF, comment="GLTr%s: cap at INT_MAX (huge tensor -> no-op clamp)"%tc))
++        module.add(VMovB32(dst=vgpr(maxGroVgpr), src=sgpr(limitSgpr), comment="GLTr%s: bound -> vgpr for per-load VMinI32"%tc))
+       module.addSpaceLine()
+-
+-      self.vgprPool.checkIn(tmp)
+-      self.vgprPool.checkIn(tmp2)
+-      self.vgprPool.checkIn(tmpVgpr)
+     elif not kernel["BufferLoad"]:
+       with self.allocTmpSgpr(2) as tmpSgprInfo:
+         tmpSgpr = tmpSgprInfo.idx
+diff --git a/projects/hipblaslt/tensilelite/Tensile/SolutionStructs/Solution.py b/projects/hipblaslt/tensilelite/Tensile/SolutionStructs/Solution.py
+index 5b9c3e6..33ff4dc 100644
+--- a/projects/hipblaslt/tensilelite/Tensile/SolutionStructs/Solution.py
++++ b/projects/hipblaslt/tensilelite/Tensile/SolutionStructs/Solution.py
+@@ -2894,6 +2894,15 @@ class Solution(collections.abc.Mapping):
+ 
+     state["GuaranteeNoPartialMetadata"] = False if state["ProblemType"]["Sparse"] else True
+ 
++    # Backport of ROCm/rocm-libraries#8909: transpose loads lack a hardware
++    # bounds check, so GuaranteeNoPartial must not suppress graShift.
++    for tc in ("A", "B"):
++      if state["enableGLTr%s"%tc] and state["GuaranteeNoPartial%s"%tc]:
++        reject(state, printRejectionReason, "enableGLTr%s with GuaranteeNoPartial%s: "
++               "global_load_tr has no hardware bounds check, so AssertFree%uElementMultiple "
++               "must not remove graShift"%(tc, tc, 0 if tc == "A" else 1))
++        return
++
+     # SourceSwap
+     if state["StoreRemapVectorWidth"]:
+       if state["SourceSwap"]:

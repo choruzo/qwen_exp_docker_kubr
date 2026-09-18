@@ -361,7 +361,9 @@ docker compose -f compose.train.rocm.yaml run --rm train python -m docker_k8s_fi
 docker compose -f compose.train.rocm.yaml run --rm train python -m docker_k8s_finetune.cli train --config config/training.rocm.yaml --smoke-test --no-export
 ```
 
-El entrenamiento completo se ejecuta solo tras autorización explícita:
+El comando siguiente muestra el perfil ROCm original. **No lo ejecute sin
+la capa corregida:** ese binario hipBLASLt abortó en el paso 17. El perfil y el
+comando seguros para el nuevo intento están al final de esta sección.
 
 ```bash
 docker compose -f compose.train.rocm.yaml run --rm train python -m docker_k8s_finetune.cli train --config config/training.rocm.yaml
@@ -422,3 +424,95 @@ convirtió a GGUF y generó `Q4_K_M` (2 783 446 720 bytes), `Q8_0`
 pipeline verificó las cuantizaciones y reubicó los tres archivos. La prueba
 creó `artifacts/rocm/export_smoke`; sus archivos son experimentales y no son
 el resultado del entrenamiento completo.
+
+### Fallo en el entrenamiento completo (18-09-2026)
+
+El intento autorizado cargó los 55 942 registros train y 3109 val admitidos
+por la regla de longitud, configuró tres épocas y 10 491 pasos de optimizador,
+y llegó al paso 17. Abortó con `Memory access fault by GPU node-1: Page not
+present or supervisor privilege`; el kernel informó un fallo de página
+`[gfxhub]` del cliente TCP. No alcanzó el primer guardado del perfil completo
+(`save_steps: 25`), por lo que no hay un checkpoint completo reanudable. El
+contenedor `qwen35-rocm-full` se detuvo y conserva sus logs. Las salidas de
+diagnóstico se guardan por separado en `artifacts/rocm/diagnostic_*`.
+
+Un diagnóstico con `TORCH_BLAS_PREFER_HIPBLASLT=0`, la solución provisional
+indicada en las [notas de ROCm 10.0](https://rocm.docs.amd.com/en/latest/about/release-notes.html),
+volvió a fallar exactamente en el paso 17. Guardó `checkpoint-10` en su propio
+directorio; este artefacto **no** es una continuación equivalente de la corrida
+completa porque el diagnóstico usó otro horizonte de scheduler. La combinación
+de esa variable con `ROCBLAS_USE_HIPBLASLT=0` y `DISABLE_ADDMM_HIP_LT=1` evitó
+el camino sospechoso, pero tardó más de 11 minutos sin completar el primer
+paso de optimizador y se detuvo por rendimiento inviable.
+
+El [incidente ROCm #6600](https://github.com/ROCm/legacy-rocm-build/issues/6600)
+describe la misma firma en gfx1201. La [corrección de TensileLite
+#8909](https://github.com/ROCm/rocm-libraries/pull/8909) limita una lectura
+fuera de los límites del tensor y fue incorporada a la rama de desarrollo el
+14-08-2026. No se ha demostrado que el binario hipBLASLt de esta imagen la
+incluya. El redondeo `PYTORCH_HIP_ALLOC_CONF=roundup_power2_divisions:16` puede
+reducir los fallos, pero el informe confirma que no los elimina. No se debe
+interpretar que un smoke de pocos pasos demuestra estabilidad para tres
+épocas. El siguiente entrenamiento completo requiere una biblioteca corregida
+verificada, una prueba que supere el paso 17 y VRAM libre de otros procesos.
+
+### Backport aislado de hipBLASLt para gfx1201
+
+El script `scripts/build_hipblaslt_gfx1201.sh` usa la etiqueta
+`rocm-7.2.4` (commit `dabb6df2b988f8eabed1e2fecefaaf4e818bc7ef`) y
+`patches/hipblaslt-rocm-7.2.4-pr8909-backport.patch`, cuya huella SHA-256
+es `a85d9fd790d345c5ff038578613dddc3e546f1a47963efbc8b2d97c6930ca1ec`.
+Compila `rocisa` con el contenedor ROCm fijado, instala `msgpack==1.1.1`
+solo en la caché de compilación y genera las cinco lógicas BF16 de gfx1201.
+La generación produjo 1551 soluciones; el ensamblador informó
+`HasGLTr16B128=1`, indispensable para cubrir el camino de kernel afectado.
+No modifica `/opt/rocm` del host ni los binarios de la imagen original.
+
+```bash
+docker compose -f compose.train.rocm.yaml build train
+scripts/build_hipblaslt_gfx1201.sh
+docker compose -f compose.train.rocm.yaml -f compose.train.rocm.patched.yaml config --quiet
+```
+
+El script crea `.cache/hipblaslt-gfx1201-bf16-overlay`: enlaces a la
+biblioteca stock del contenedor y cuatro pares de objetos `.co` y metadatos
+`.dat` recompilados. La capa `compose.train.rocm.patched.yaml` activa ese
+directorio solo para la ruta corregida mediante
+`HIPBLASLT_TENSILE_LIBPATH`. Los archivos `.dat` resultaron idénticos entre
+dos generaciones; los `.co` cambiaron de SHA-256, por lo que el pipeline
+registra los hashes concretos de los ocho archivos al iniciar cada corrida y
+los incorpora al contrato de checkpoints. También registra las variables de
+BLAS y del asignador que alteran la ejecución. Una prueba de multiplicación
+BF16 con backward pasó con la capa corregida.
+
+El perfil, los datos, el modelo, los splits y las reglas de pérdida permanecen
+iguales. La prueba de 35 pasos con el backport se guardó aparte en
+`artifacts/rocm/diagnostic_patched`; no se reanuda desde los checkpoints
+anteriores. Terminó con `train_loss=1.3076`, `eval_loss=1.3769`, evaluación
+final y `checkpoint-35`, sin el fallo del paso 17. La GPU tenía 19.77 GiB de
+memoria asignada y 21.31 GiB reservada como máximos de PyTorch en esa prueba.
+El diagnóstico alternativo de 35 pasos con redondeo del asignador también
+terminó (`train_loss=1.307`, `eval_loss=1.377`), pero esa variable no es una
+corrección confirmada para una corrida larga. El preflight del perfil corregido
+devolvió `ready` y las 114 pruebas del repositorio pasaron.
+
+El perfil final `config/training.rocm.patched.yaml` exige el override y escribe
+en `artifacts/rocm/hipblaslt_patched`. Solo difiere del perfil ROCm original
+en esa exigencia y las rutas de salida. El benchmark asociado es
+`config/benchmark.rocm.patched.yaml`; conserva test y manifiestos congelados
+y escribe en `benchmarks/rocm/hipblaslt_patched`. Antes de arrancar, la GPU
+debe tener al menos 23 GiB libres. El contenedor se puede iniciar así:
+
+```bash
+docker compose -f compose.train.rocm.yaml -f compose.train.rocm.patched.yaml run --rm --no-deps train python -m docker_k8s_finetune.cli train --config config/training.rocm.patched.yaml --preflight --no-export
+docker compose -f compose.train.rocm.yaml -f compose.train.rocm.patched.yaml run -d --no-deps --name qwen35-rocm-full-patched train python -m docker_k8s_finetune.cli train --config config/training.rocm.patched.yaml
+docker logs -f qwen35-rocm-full-patched
+```
+
+Son tres épocas y 10 491 pasos de optimizador. A partir de los pasos medidos,
+las evaluaciones y los checkpoints cada 25 pasos, reservar aproximadamente
+2 a 5 días, según la distribución de longitudes y el coste de exportación.
+Cada checkpoint de diagnóstico ocupó 763 MiB; el perfil completo conserva tres.
+Reservar al menos 40 GiB para checkpoints, adaptador, modelo fusionado y GGUF,
+además de imagen, modelo base y datos. El smoke y el diagnóstico prueban el
+camino crítico; no garantizan que las tres épocas terminen sin otro fallo ROCm.

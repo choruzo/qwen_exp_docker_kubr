@@ -1,0 +1,87 @@
+# Patched hipBLASLt ROCm results; test split and manifests are unchanged.
+version: 1
+seed: 3407
+inputs:
+  test: data/processed/test.jsonl
+  split_statistics: data/processed/split_statistics.json
+  test_manifest: benchmarks/test_manifest.jsonl
+  judge_manifest: benchmarks/llm_judge_manifest.jsonl
+  out_of_domain: benchmarks/fixtures/out_of_domain.jsonl
+  out_of_domain_count: 50
+outputs:
+  baseline: benchmarks/rocm/hipblaslt_patched/baseline_results.json
+  finetuned_safetensors: benchmarks/rocm/hipblaslt_patched/finetuned_safetensors_results.json
+  finetuned_gguf: benchmarks/rocm/hipblaslt_patched/finetuned_gguf_results.json
+  finetuned_combined: benchmarks/rocm/hipblaslt_patched/finetuned_results.json
+  comparison_report: benchmarks/rocm/hipblaslt_patched/comparison_report.md
+  loss_chart: benchmarks/rocm/hipblaslt_patched/training_loss.svg
+  work_dir: benchmarks/rocm/hipblaslt_patched/work
+generation:
+  seed: 3407
+  batch_size: 4
+  batch_policy: left_padding_first_eos_v1
+  batch_order: prompt_length_ascending
+  batch_resume_policy: deterministic_full_group_v1
+  truncation_detection: max_tokens_without_eos_v1
+  max_new_tokens: 2048
+  cache_compatible_prior_max_new_tokens:
+  - 1536
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+  retry_on_truncation:
+    enabled: true
+    max_attempts: 1
+    repetition_penalty: 1.1
+  enable_thinking: false
+  timeout_seconds: 300
+  max_truncation_rate: 0.01
+  response_instruction: Responde directamente y con la extension minima necesaria
+    para ser preciso y completo, usando el idioma de la pregunta. En tareas de YAML
+    o Dockerfile, devuelve el artefacto completo y valido y no cortes bloques de codigo.
+variants:
+  baseline:
+    backend: unsloth
+    model_path: Modelo/Qwen3.5-4B
+    provenance_config: config/training.rocm.patched.yaml
+    load_in_4bit: false
+  finetuned_safetensors:
+    backend: unsloth
+    model_path: artifacts/rocm/hipblaslt_patched/merged
+    export_manifest: artifacts/rocm/hipblaslt_patched/export_manifest.json
+    artifact: merged
+    load_in_4bit: false
+  finetuned_gguf:
+    backend: openai_compatible
+    export_manifest: artifacts/rocm/hipblaslt_patched/export_manifest.json
+    artifact: gguf
+    require_llama_props: true
+    expected_quantization: q4_k_m
+    base_url_env: GGUF_LLM_BASE_URL
+    api_key_env: GGUF_LLM_API_KEY
+    model_env: GGUF_LLM_MODEL
+semantic_similarity:
+  model: sentence-transformers/paraphrase-multilingual-mpnet-base-v2
+  model_revision: 4328cf26390c98c5e3c738b4460a05b95f4911f5
+  device: auto
+  batch_size: 64
+syntax_validation:
+  enabled: true
+  config: config/validation.yaml
+llm_judge:
+  enabled: true
+  seed: 3407
+  prompt: benchmarks/judge_prompt.md
+  require_llama_props: true
+  model_identity:
+    alias: gemma-4-12b-judge
+    filename: gemma-4-12b-it-UD-Q6_K_XL.gguf
+    quantization: q6_k_xl
+    bytes: 10685011360
+    sha256: eb0f252863d14f7782122a4ac7e8744ed6e4a9fc132584d94686a9441f7c5d35
+  base_url_env: JUDGE_LLM_BASE_URL
+  api_key_env: JUDGE_LLM_API_KEY
+  model_env: JUDGE_LLM_MODEL
+  timeout_seconds: 120
+  max_retries: 3
+  temperature: 0.0

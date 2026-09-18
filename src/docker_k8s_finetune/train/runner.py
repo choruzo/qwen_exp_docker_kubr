@@ -35,6 +35,38 @@ from .core import (
 LOGGER = logging.getLogger(__name__)
 
 
+def _rocm_math_library_provenance(*, required: bool = False) -> dict[str, Any]:
+    knobs = (
+        "PYTORCH_HIP_ALLOC_CONF",
+        "TORCH_BLAS_PREFER_HIPBLASLT",
+        "ROCBLAS_USE_HIPBLASLT",
+        "DISABLE_ADDMM_HIP_LT",
+    )
+    override = os.environ.get("HIPBLASLT_TENSILE_LIBPATH")
+    provenance: dict[str, Any] = {
+        "hipblaslt_tensile_libpath": override,
+        "environment": {name: os.environ[name] for name in knobs if name in os.environ},
+    }
+    if not override:
+        if required:
+            raise PipelineError("This ROCm profile requires a patched hipBLASLt overlay")
+        return provenance
+    library = Path(override)
+    if not library.is_dir():
+        raise PipelineError(f"HIPBLASLT_TENSILE_LIBPATH is not a directory: {library}")
+    objects = sorted(library.glob("TensileLibrary_BB_BB*gfx1201.co"))
+    if len(objects) != 4:
+        raise PipelineError("Expected four patched BF16 gfx1201 hipBLASLt objects")
+    files: dict[str, str] = {}
+    for obj in objects:
+        for path in (obj, obj.with_suffix(".dat")):
+            if not path.is_file() or path.is_symlink():
+                raise PipelineError(f"Patched hipBLASLt file is missing or points to stock: {path}")
+            files[path.name] = file_sha256(path)
+    provenance["patched_files_sha256"] = files
+    return provenance
+
+
 def _warmup_steps(
     *, examples: int, epochs: float, batch_size: int, gradient_accumulation_steps: int,
     max_steps: int, warmup_ratio: float,
@@ -342,6 +374,13 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
         if int(properties.total_memory) < 30 * 1024 ** 3:
             raise PipelineError("ROCm profile requires the 32 GB discrete GPU")
 
+    rocm_math_library = (
+        _rocm_math_library_provenance(
+            required=bool(config.get("runtime", {}).get("require_hipblaslt_override", False))
+        )
+        if accelerator == "rocm" else None
+    )
+
     smoke = config["smoke_test"]
     train_limit = int(smoke["train_records"]) if attempt.smoke_test else None
     validation_limit = int(smoke["validation_records"]) if attempt.smoke_test else None
@@ -448,6 +487,8 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
             "validation": validation_length_filter,
         },
     }
+    if rocm_math_library is not None:
+        checkpoint_contract["rocm_math_library"] = rocm_math_library
     checkpoint_fingerprint = content_hash(stable_json(checkpoint_contract))
     train_dataset = Dataset.from_list(formatted_train)
     validation_dataset = Dataset.from_list(formatted_validation)
@@ -533,6 +574,7 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
             "gpu": torch.cuda.get_device_name(0),
             "gcn_arch": str(getattr(torch.cuda.get_device_properties(0), "gcnArchName", "")),
             "gpu_total_memory_bytes": int(torch.cuda.get_device_properties(0).total_memory),
+            **({"rocm_math_library": rocm_math_library} if rocm_math_library is not None else {}),
         },
         "max_seq_length": attempt.max_seq_length,
         "batch_size": attempt.batch_size,
