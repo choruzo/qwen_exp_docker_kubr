@@ -47,7 +47,7 @@ def _config() -> dict:
         "model": {"loader": "FastVisionModel", "architecture": "qwen3_5_vlm_text_only", "local_path": "model", "name": "remote", "revision": "a" * 40, "expected_sha256": {"model-1.safetensors": hashlib.sha256(b"{}").hexdigest()}, "prefer_local_if_present": True, "max_seq_length": 8192},
         "architecture": {"text_only": True, "finetune_vision_layers": False},
         "lora": {"target_modules": "auto"},
-        "trainer": {"response_only_loss": True, "train_sampling_strategy": "group_by_length", "overlength_action": "exclude", "length_audit_batch_size": 256, "per_device_train_batch_size": 2, "per_device_eval_batch_size": 4, "gradient_accumulation_steps": 8, "effective_batch_size": 16, "eval_steps": 500, "oom_fallback": {"enabled": True, "profiles": [{"name": "batch_reduction_8k", "max_seq_length": 8192, "per_device_train_batch_size": 1, "gradient_accumulation_steps": 16}, {"name": "context_reduction_4k", "max_seq_length": 4096, "per_device_train_batch_size": 1, "gradient_accumulation_steps": 16}]}},
+        "trainer": {"response_only_loss": True, "train_sampling_strategy": "random", "overlength_action": "exclude", "length_audit_batch_size": 256, "per_device_train_batch_size": 1, "per_device_eval_batch_size": 4, "gradient_accumulation_steps": 16, "effective_batch_size": 16, "eval_steps": 500, "oom_fallback": {"enabled": True, "profiles": [{"name": "context_reduction_4k", "max_seq_length": 4096, "per_device_train_batch_size": 1, "gradient_accumulation_steps": 16}, {"name": "context_reduction_2k", "max_seq_length": 2048, "per_device_train_batch_size": 1, "gradient_accumulation_steps": 16}]}},
         "output": {"checkpoints": "artifacts/checkpoints"},
         "smoke_test": {"input": "smoke.jsonl", "max_seq_length": 2048, "per_device_train_batch_size": 1, "gradient_accumulation_steps": 1, "output_dir": "artifacts/smoke", "max_steps": 2},
     }
@@ -160,15 +160,15 @@ def test_local_model_git_revision_uses_command_scoped_safe_directory(
 def test_attempts_and_latest_checkpoint_are_deterministic(tmp_path: Path) -> None:
     config = _config()
     primary = build_attempt(config, tmp_path, smoke_test=False)
-    fallback_8k = build_attempt(config, tmp_path, smoke_test=False, fallback_index=0)
-    fallback_4k = build_attempt(config, tmp_path, smoke_test=False, fallback_index=1)
+    fallback_4k = build_attempt(config, tmp_path, smoke_test=False, fallback_index=0)
+    fallback_2k = build_attempt(config, tmp_path, smoke_test=False, fallback_index=1)
     assert primary.effective_batch_size == 16
-    assert fallback_8k.max_seq_length == 8192
     assert fallback_4k.max_seq_length == 4096
+    assert fallback_2k.max_seq_length == 2048
     assert primary.output_dir.name == "primary"
-    assert fallback_8k.output_dir.name == "batch_reduction_8k"
     assert fallback_4k.output_dir.name == "context_reduction_4k"
-    assert len({primary.output_dir, fallback_8k.output_dir, fallback_4k.output_dir}) == 3
+    assert fallback_2k.output_dir.name == "context_reduction_2k"
+    assert len({primary.output_dir, fallback_4k.output_dir, fallback_2k.output_dir}) == 3
     output = tmp_path / "artifacts" / "checkpoints"
     checkpoint_9 = output / "checkpoint-9"
     checkpoint_9.mkdir(parents=True)
@@ -248,10 +248,10 @@ def test_training_config_rejects_manual_targets() -> None:
         validate_training_config(config)
 
 
-def test_training_config_requires_length_grouping() -> None:
+def test_training_config_requires_random_sampling_for_batch_one() -> None:
     config = _config()
-    config["trainer"]["train_sampling_strategy"] = "random"
-    with pytest.raises(PipelineError, match="grouped by length"):
+    config["trainer"]["train_sampling_strategy"] = "group_by_length"
+    with pytest.raises(PipelineError, match="random sampling"):
         validate_training_config(config)
 
 
@@ -439,7 +439,7 @@ def test_oom_fallback_runs_after_primary_exception_scope(monkeypatch, tmp_path: 
     monkeypatch.setattr(train_runner, "_train_once", fake_train_once)
     result = train_runner.run_training(smoke_test=False, export=False)
     assert len(calls) == 2
-    assert calls[1].max_seq_length == 8192
+    assert calls[1].max_seq_length == 4096
     assert calls[1].batch_size == 1
     assert result["oom_fallback_used"] is True
     assert result["oom_failed_profiles"] == ["primary"]
@@ -478,10 +478,10 @@ def test_oom_fallback_reduces_context_only_after_batch_one_oom(monkeypatch, tmp_
     monkeypatch.setattr(train_runner, "_train_once", fake_train_once)
     result = train_runner.run_training(smoke_test=False, export=False)
 
-    assert [attempt.max_seq_length for attempt in calls] == [8192, 8192, 4096]
-    assert [attempt.batch_size for attempt in calls] == [2, 1, 1]
-    assert result["training_profile"] == "context_reduction_4k"
-    assert result["oom_failed_profiles"] == ["primary", "batch_reduction_8k"]
+    assert [attempt.max_seq_length for attempt in calls] == [8192, 4096, 2048]
+    assert [attempt.batch_size for attempt in calls] == [1, 1, 1]
+    assert result["training_profile"] == "context_reduction_2k"
+    assert result["oom_failed_profiles"] == ["primary", "context_reduction_4k"]
 
 
 def test_oom_fallback_resumes_after_power_loss_without_retrying_failed_profile(
@@ -505,7 +505,7 @@ def test_oom_fallback_resumes_after_power_loss_without_retrying_failed_profile(
     monkeypatch.setattr(train_runner, "_train_once", fake_train_once)
     result = train_runner.run_training(smoke_test=False, export=False)
 
-    assert [attempt.profile for attempt in calls] == ["batch_reduction_8k"]
+    assert [attempt.profile for attempt in calls] == ["context_reduction_4k"]
     assert result["oom_fallback_used"] is True
     assert result["oom_failed_profiles"] == ["primary"]
     assert not state_path.exists()

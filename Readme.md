@@ -135,18 +135,24 @@ y rechaza cualquier diferencia.
     docker compose -f compose.train.yaml run --build --rm train python -m docker_k8s_finetune.cli train --smoke-test --no-export
     docker compose -f compose.train.yaml run --build --rm train python -m docker_k8s_finetune.cli train
 
-El perfil principal usa contexto 8192, batch por dispositivo 2 y acumulacion 8.
+El perfil principal usa contexto 8192, batch por dispositivo 1 y acumulacion 16.
 El batch efectivo sigue siendo 16. La prueba real con batch 4 alcanzo 15,99 GiB
 de VRAM, dejo solo 59-64 MiB libres y llevo Docker/WSL (13,9 GiB de RAM) a
 usar swap, por lo que no era un perfil reproducible ni dejaba margen seguro.
-Batch 1 x acumulacion 16 elimino la presion (unos 9,4 GiB de VRAM y solo
-115 MiB de swap), pero fue un 35-50 % mas lento en los pasos estables. Batch 2
-es el perfil intermedio elegido para conservar margen y mejorar throughput.
-El sampler agrupa deterministamente por longitud para evitar que un unico ejemplo
-largo rellene todo un batch de ejemplos cortos hasta 8192 tokens.
-Si CUDA devuelve OOM, conserva primero el contexto 8192 y reduce a batch 1 x
-acumulacion 16; despues reduce el contexto a 4096 con el mismo batch efectivo.
-El resultado deja constancia del
+Batch 2 x acumulacion 8 mejoro los pasos cortos, pero un lote largo alcanzo
+15,88 GiB, dejo 173 MiB libres y volvio a bloquear el avance. Batch 1 x
+acumulacion 16 es el perfil seguro: usa unos 9,4-11,2 GiB en los lotes normales
+y llego puntualmente a 15,72 GiB en un lote cercano a 8192 tokens, pero siguio
+avanzando y mantuvo el swap alrededor de 115 MiB durante la prueba real.
+El sampler usa orden aleatorio determinista. Con batch fisico 1 no existe padding
+entre ejemplos que ahorrar agrupandolos por longitud. Transformers 5.2 construye
+`LengthGroupedSampler` con el batch efectivo (16), ordena megabloques de 800
+ejemplos y concentra 16 secuencias largas en un mismo update. En la prueba real
+esto mantuvo los primeros 350 updates en unos 14 segundos, pero el siguiente
+megabloque largo elevo cada update a horas sin producir OOM. El orden aleatorio
+distribuye esas secuencias entre ventanas de acumulacion y evita ese bloqueo.
+Si CUDA devuelve OOM, reduce primero el contexto a 4096 y despues a 2048,
+manteniendo batch 1 x acumulacion 16. El resultado deja constancia del
 perfil que termino el entrenamiento y de todos los perfiles que fallaron.
 Los checkpoints se guardan cada 25 updates (conservando los tres mas recientes)
 y se reanudan automaticamente. Tras un corte, el runner ignora

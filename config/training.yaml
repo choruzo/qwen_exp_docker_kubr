@@ -40,8 +40,8 @@ lora:
 
 trainer:
   epochs: 3
-  per_device_train_batch_size: 2
-  gradient_accumulation_steps: 8
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16
   effective_batch_size: 16
   learning_rate: 0.0002
   scheduler: cosine
@@ -60,18 +60,18 @@ trainer:
   report_to: tensorboard
   resume_from_checkpoint: auto
   packing: false
-  train_sampling_strategy: group_by_length
+  train_sampling_strategy: random
   overlength_action: exclude
   length_audit_batch_size: 256
   oom_fallback:
     enabled: true
     profiles:
-      - name: batch_reduction_8k
-        max_seq_length: 8192
-        per_device_train_batch_size: 1
-        gradient_accumulation_steps: 16
       - name: context_reduction_4k
         max_seq_length: 4096
+        per_device_train_batch_size: 1
+        gradient_accumulation_steps: 16
+      - name: context_reduction_2k
+        max_seq_length: 2048
         per_device_train_batch_size: 1
         gradient_accumulation_steps: 16
 

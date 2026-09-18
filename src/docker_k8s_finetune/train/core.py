@@ -451,8 +451,10 @@ def validate_training_config(config: Mapping[str, Any]) -> None:
         raise PipelineError("Qwen3.5 hybrid attention requires Unsloth automatic module selection")
     if trainer.get("response_only_loss") is not True:
         raise PipelineError("Response-only loss is required")
-    if trainer.get("train_sampling_strategy") != "group_by_length":
-        raise PipelineError("Variable-length training data must be grouped by length")
+    if trainer.get("train_sampling_strategy") != "random":
+        raise PipelineError(
+            "Batch-one training must use random sampling to avoid concentrating long sequences"
+        )
     if trainer.get("overlength_action") != "exclude":
         raise PipelineError("Overlength training examples must be excluded explicitly")
     if int(trainer.get("length_audit_batch_size", 0)) <= 0:
