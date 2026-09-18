@@ -509,3 +509,79 @@ def test_oom_fallback_resumes_after_power_loss_without_retrying_failed_profile(
     assert result["oom_fallback_used"] is True
     assert result["oom_failed_profiles"] == ["primary"]
     assert not state_path.exists()
+
+
+def test_rocm_profile_rejects_quantization_and_checkpoint_reuse() -> None:
+    config = _config()
+    config["runtime"] = {"accelerator": "rocm", "expected_gpu_name": "AMD Radeon AI PRO R9700"}
+    config["model"].update({"load_in_4bit": False, "dtype": "bfloat16"})
+    config["trainer"].update({"optimizer": "adamw_torch", "resume_from_checkpoint": "none"})
+    config["output"].update({
+        "checkpoints": "artifacts/rocm/checkpoints",
+        "adapter": "artifacts/rocm/adapter",
+        "merged": "artifacts/rocm/merged",
+        "gguf": "artifacts/rocm/gguf",
+        "metrics": "artifacts/rocm/metrics",
+        "manifest": "artifacts/rocm/export_manifest.json",
+    })
+    validate_training_config(config)
+    config["model"]["load_in_4bit"] = True
+    with pytest.raises(PipelineError, match="unquantized BF16"):
+        validate_training_config(config)
+    config["model"]["load_in_4bit"] = False
+    config["trainer"]["resume_from_checkpoint"] = "auto"
+    with pytest.raises(PipelineError, match="without automatic checkpoint resume"):
+        validate_training_config(config)
+
+
+def test_rocm_profile_requires_local_base_model(tmp_path: Path) -> None:
+    config = _config()
+    config["runtime"] = {"require_local_model": True}
+    with pytest.raises(PipelineError, match="complete local base model"):
+        resolve_model_reference(config, tmp_path)
+
+
+def test_rocm_validation_redaction_is_exactly_pinned(tmp_path: Path) -> None:
+    from docker_k8s_finetune.dedupe.exact import canonical_content
+    from docker_k8s_finetune.io import content_hash, file_sha256
+
+    original = _record()
+    original["meta"]["source_record_id"] = "one-answer"
+    original["meta"]["content_hash"] = content_hash(canonical_content(original))
+    redacted = json.loads(json.dumps(original))
+    redacted["messages"][1]["content"] = "Pregunta con secreto redactado"
+    actual_content_hash = content_hash(canonical_content(redacted))
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    for filename, record in (("train.jsonl", original), ("val.jsonl", redacted), ("test.jsonl", original)):
+        (data_dir / filename).write_text(json.dumps(record) + "\n", encoding="utf-8")
+    statistics = {"provisional": False, "outputs": {
+        "train": {"sha256": file_sha256(data_dir / "train.jsonl")},
+        "validation": {"sha256": "historical-manifest-hash", "bytes": 100},
+        "test": {"sha256": file_sha256(data_dir / "test.jsonl")},
+    }}
+    (data_dir / "statistics.json").write_text(json.dumps(statistics), encoding="utf-8")
+    config = {
+        "runtime": {"accelerator": "rocm"},
+        "data": {
+            "train": "data/train.jsonl", "validation": "data/val.jsonl",
+            "test": "data/test.jsonl", "split_statistics": "data/statistics.json",
+            "validation_redaction": {
+                "manifest_sha256": "historical-manifest-hash", "manifest_bytes": 100,
+                "actual_sha256": file_sha256(data_dir / "val.jsonl"),
+                "actual_bytes": (data_dir / "val.jsonl").stat().st_size,
+                "record_line": 1, "source_record_id": "one-answer",
+                "recorded_content_hash": original["meta"]["content_hash"],
+                "redacted_content_hash": actual_content_hash,
+            },
+        },
+    }
+    verified = train_runner._verify_final_split(config, tmp_path)
+    assert verified["outputs"]["validation"]["sha256"] == file_sha256(data_dir / "val.jsonl")
+    assert verified["outputs"]["validation"]["manifest_sha256"] == "historical-manifest-hash"
+    assert statistics["outputs"]["validation"]["sha256"] == "historical-manifest-hash"
+
+    config["data"]["validation_redaction"]["redacted_content_hash"] = "wrong"
+    with pytest.raises(PipelineError, match="record hashes"):
+        train_runner._verify_final_split(config, tmp_path)

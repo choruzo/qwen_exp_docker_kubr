@@ -1252,3 +1252,37 @@ def test_batched_cache_prefill_orders_only_by_prompt_length(tmp_path) -> None:
 
     assert backend.questions[-2:] == ["bbb", "four"]
     assert repaired == {"hash-0", "hash-2"}
+
+
+def test_hip_runtime_metadata_records_gfx_architecture() -> None:
+    class Properties:
+        name = "AMD Radeon Graphics"
+        total_memory = 32624 * 1024**2
+        major = 12
+        minor = 0
+        gcnArchName = "gfx1201"
+
+    class Cuda:
+        @staticmethod
+        def current_device():
+            return 0
+
+        @staticmethod
+        def get_device_properties(index):
+            assert index == 0
+            return Properties()
+
+    class Version:
+        cuda = None
+        hip = "7.2.53211"
+
+    class Torch:
+        __version__ = "2.12.1+rocm7.2"
+        cuda = Cuda()
+        version = Version()
+
+    runtime = _cuda_runtime_metadata(Torch())
+    assert runtime["accelerator"] == "rocm"
+    assert runtime["gcn_arch"] == "gfx1201"
+    assert runtime["torch_hip_version"] == "7.2.53211"
+    assert "compute_capability" not in runtime

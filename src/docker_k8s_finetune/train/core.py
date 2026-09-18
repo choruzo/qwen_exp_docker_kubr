@@ -34,6 +34,8 @@ def resolve_model_reference(config: Mapping[str, Any], root: Path) -> str:
         if not list(local.glob("*.safetensors")):
             raise PipelineError(f"Local model has no safetensors shards: {local}")
         return str(local.resolve())
+    if config.get("runtime", {}).get("require_local_model"):
+        raise PipelineError(f"ROCm profile requires the complete local base model: {local}")
     return str(model["name"])
 
 
@@ -434,6 +436,21 @@ def validate_training_config(config: Mapping[str, Any]) -> None:
     architecture = config.get("architecture", {})
     lora = config.get("lora", {})
     trainer = config.get("trainer", {})
+    runtime = config.get("runtime", {})
+    accelerator = runtime.get("accelerator", "cuda")
+    if accelerator not in ("cuda", "rocm"):
+        raise PipelineError("Training accelerator must be cuda or rocm")
+    if accelerator == "rocm":
+        if model.get("load_in_4bit") is not False or model.get("dtype") != "bfloat16":
+            raise PipelineError("ROCm profile requires unquantized BF16 LoRA")
+        if trainer.get("optimizer") != "adamw_torch":
+            raise PipelineError("ROCm profile requires the native torch AdamW optimizer")
+        if trainer.get("resume_from_checkpoint") != "none":
+            raise PipelineError("ROCm profile must start without automatic checkpoint resume")
+        output = config.get("output", {})
+        for key in ("checkpoints", "adapter", "merged", "gguf", "metrics", "manifest"):
+            if not str(output.get(key, "")).startswith("artifacts/rocm/"):
+                raise PipelineError(f"ROCm output {key} must be isolated under artifacts/rocm")
     if model.get("loader") != "FastVisionModel" or model.get("architecture") != "qwen3_5_vlm_text_only":
         raise PipelineError("Qwen3.5-4B must use FastVisionModel in text-only mode")
     revision = str(model.get("revision", ""))

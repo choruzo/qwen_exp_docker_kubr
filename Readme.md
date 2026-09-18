@@ -327,3 +327,98 @@ registrada en `config/benchmark.yaml` y en cada resultado.
 - Los validadores se ejecutan con imagenes fijadas por digest.
 - Ningun benchmark provisional puede generar el informe final salvo que se use
   explicitamente --allow-provisional.
+
+## Perfil ROCm: Radeon AI PRO R9700
+
+La ruta ROCm usa `config/training.rocm.yaml`, `Dockerfile.train.rocm` y
+`compose.train.rocm.yaml`; la ruta NVIDIA anterior permanece independiente. El
+perfil usa LoRA BF16 sin cuantización, `adamw_torch`, entrenamiento solo de texto,
+pérdida solo en respuestas, semilla 3407, los mismos hashes del modelo,
+de train y de test, y la excepción de validación descrita abajo.
+El smoke toma registros directamente de `train.jsonl` y `val.jsonl` congelados.
+Todas las salidas nuevas se escriben en `artifacts/rocm`; no se reanudan
+checkpoints archivados de NVIDIA. Es posible cargar únicamente pesos de un
+adaptador LoRA compatible y validado como inicialización de un experimento nuevo,
+pero sus estados de optimizador, scheduler y RNG no equivalen a reanudar el
+entrenamiento y la procedencia de ese experimento debe declararse aparte.
+
+En el host examinado el 18-09-2026, `amd-smi` informa Radeon AI PRO R9700
+(gfx1201, 32624 MB), `amdgpu 7.1.3.31500000` y ROCm 10.0.0. Ubuntu es
+24.04.5 y el kernel es 7.0.0-31-generic. La matriz oficial de ROCm 10.0.0
+incluye gfx1201, pero valida Radeon sobre Ubuntu 24.04.4 con kernel HWE 6.17;
+la combinación actual del host queda fuera de esa matriz y requiere el smoke
+empírico. La imagen ROCm de Unsloth está fijada por digest y usa ROCm 7.2.4,
+por lo que debe verificarse su interoperabilidad con el driver del host antes
+de usarla para un entrenamiento largo.
+
+```bash
+PATH=/tmp/qwen-git-lfs/usr/bin:$PATH git lfs ls-files
+sha256sum data/processed/{train,val,test}.jsonl
+docker compose -f compose.train.rocm.yaml config --quiet
+docker compose -f compose.train.rocm.yaml build train
+docker compose -f compose.train.rocm.yaml run --rm train python -c 'import torch; print(torch.__version__, torch.version.hip, torch.cuda.is_available(), torch.cuda.get_device_name(0))'
+docker compose -f compose.train.rocm.yaml run --rm train python -m docker_k8s_finetune.cli train --config config/training.rocm.yaml --smoke-test --preflight --no-export
+docker compose -f compose.train.rocm.yaml run --rm train python -m docker_k8s_finetune.cli train --config config/training.rocm.yaml --smoke-test --no-export
+```
+
+El entrenamiento completo se ejecuta solo tras autorización explícita:
+
+```bash
+docker compose -f compose.train.rocm.yaml run --rm train python -m docker_k8s_finetune.cli train --config config/training.rocm.yaml
+```
+
+Para evaluar las exportaciones ROCm, use `config/benchmark.rocm.yaml` con
+`--config` en los comandos `benchmark`, `benchmark-syntax`, `benchmark-judge`
+y `report`. Conserva los manifiestos y el test congelados; escribe resultados
+en `benchmarks/rocm` y lee `artifacts/rocm/export_manifest.json`. El baseline
+publicado previamente sigue siendo el requisito de entrenamiento según
+`config/training.rocm.yaml`.
+
+### Estado de la comprobación ROCm (18-09-2026)
+
+La imagen construida detecta `/dev/kfd` y `/dev/dri/renderD128`; PyTorch
+`2.12.1+rocm7.2` informa HIP `7.2.53211`, `torch.cuda.is_available() == True`
+y `gfx1201`. La imagen incluye Unsloth `2026.9.4`, Transformers `5.5.0`, TRL
+`0.24.0`, PEFT `0.20.0`, TensorBoard `2.20.0`, sentence-transformers `5.2.0`
+y llama.cpp en el commit `44be98f057e9f9902a8ee12630e181c7f8ec2953`.
+Unsloth empleó su implementación de PyTorch al faltar flash-linear-attention
+y causal-conv1d; el smoke BF16 terminó con `adamw_torch`.
+
+El smoke de un paso, con evaluación y checkpoint, terminó en 136 s:
+`train_loss=0.3450`, `eval_loss=1.9086` y máximo observado de 10.68 GiB de
+VRAM. Una calibración de dos pasos sobre un registro de 7906 tokens y
+validación de 7529 tokens con contexto 8192 terminó en 168 s; el máximo
+observado fue 22.66 GiB, con 9.20 GiB libres. La auditoría de longitudes
+halló 57 registros train y 2 val por encima de 8192 tokens; la regla
+`overlength_action: exclude` los excluiría y registraría los conteos y hashes.
+Con batch 1 y acumulación 16, la estimación preliminar de tres épocas es de
+2 a 5 días, según la distribución de longitudes, evaluaciones y guardados.
+Reservar al menos 40 GiB para salidas además de la imagen, modelo y datos.
+
+**Excepción de procedencia de validación:** el `val.jsonl` seguido por Git y
+copiado desde la máquina Windows mide 9 581 643 bytes y tiene SHA-256
+`bcf223584546fe573830470fcffedcffe92817034078808934bc892f6cbf90ac`.
+`split_statistics.json` conserva 9 581 692 bytes y SHA-256
+`bb5c3c04504fd7d307e4f3305ffae9c8ab5765882e85964f9bcfccbb2b25fe4a`.
+La diferencia corresponde a una credencial redactada en el registro de
+validación 1659, de la pregunta Stack Overflow 50271985. Los 3111 registros
+coinciden con sus asignaciones del manifiesto y los recuentos por categoría y
+fuente. Todos los `content_hash` de validación coinciden salvo el del registro
+redactado. No se restaura la credencial ni se cambian los archivos de datos o el
+manifiesto histórico. `config/training.rocm.yaml` fija ambos hashes de archivo,
+los dos tamaños y las huellas anterior y actual de ese registro. El preflight
+ROCm audita los 3111 registros y acepta solo esa excepción exacta; la identidad
+efectiva de validación que se guarda en checkpoints es el SHA-256 del archivo
+redactado. Esta excepción altera de forma explícita el contrato de validación
+respecto al manifiesto original; la ruta NVIDIA sigue exigiendo el hash original.
+
+```bash
+docker compose -f compose.train.rocm.yaml run --rm train python -m docker_k8s_finetune.cli train --config config/training.rocm.yaml --preflight --no-export
+```
+
+La exportación del adaptador del smoke también terminó: Unsloth fusionó pesos BF16,
+convirtió a GGUF y generó `Q4_K_M` (2 783 446 720 bytes), `Q8_0`
+(4 610 580 160 bytes) y `BF16-mmproj` (675 568 864 bytes). El finalizador del
+pipeline verificó las cuantizaciones y reubicó los tres archivos. La prueba
+creó `artifacts/rocm/export_smoke`; sus archivos son experimentales y no son
+el resultado del entrenamiento completo.

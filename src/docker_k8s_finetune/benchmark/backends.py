@@ -27,14 +27,26 @@ def _cuda_runtime_metadata(torch: Any) -> dict[str, Any]:
     properties = torch.cuda.get_device_properties(index)
     major = int(getattr(properties, "major", 0))
     minor = int(getattr(properties, "minor", 0))
-    return {
+    runtime = {
         "device": str(properties.name),
         "device_index": index,
         "total_memory_bytes": int(properties.total_memory),
-        "compute_capability": f"{major}.{minor}",
         "torch_version": str(torch.__version__),
-        "torch_cuda_version": str(torch.version.cuda),
     }
+    hip = getattr(torch.version, "hip", None)
+    if hip:
+        runtime.update({
+            "accelerator": "rocm",
+            "gcn_arch": str(getattr(properties, "gcnArchName", "")),
+            "torch_hip_version": str(hip),
+        })
+    else:
+        runtime.update({
+            "accelerator": "cuda",
+            "compute_capability": f"{major}.{minor}",
+            "torch_cuda_version": str(torch.version.cuda),
+        })
+    return runtime
 
 
 def _verify_llama_props(
@@ -191,7 +203,7 @@ class UnslothBackend:
         except ImportError as exc:
             raise PipelineError("Unsloth benchmark backend must run in compose.train.yaml") from exc
         if not torch.cuda.is_available():
-            raise PipelineError("CUDA is required for the Unsloth benchmark backend")
+            raise PipelineError("A PyTorch GPU is required for the Unsloth benchmark backend")
         model_path = root / str(variant["model_path"])
         if not model_path.is_dir():
             raise PipelineError(f"Benchmark model path does not exist: {model_path}")

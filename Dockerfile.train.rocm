@@ -1,0 +1,26 @@
+# Separate ROCm image from Dockerfile.train (NVIDIA CUDA).
+FROM unsloth/unsloth-rocm@sha256:e0fd654870d8573b65866fe9e781219f9fc9c1f1dcbcc5adaf9336dc5223a856
+# Pin the metrics dependencies and the semantic scorer used by the prior baseline.
+RUN /opt/unsloth-venv/bin/python -m pip install --no-cache-dir \
+        'tensorboard==2.20.0' 'tensorboard-data-server==0.7.2' \
+        'absl-py==2.5.0' 'grpcio==1.84.0' 'markdown==3.10.3' 'werkzeug==3.1.8' \
+    && /opt/unsloth-venv/bin/python -m pip install --no-cache-dir --no-deps \
+        'sentence-transformers==5.2.0' \
+    && /opt/unsloth-venv/bin/python -c "from importlib.metadata import version; assert version('tensorboard') == '2.20.0'; assert version('sentence-transformers') == '5.2.0'"
+# Keep GGUF conversion offline and tied to one llama.cpp revision.
+ENV UNSLOTH_LLAMA_CPP_PATH=/opt/llama.cpp \
+    UNSLOTH_LLAMA_CPP_SCRIPTS_DIR=/opt/llama.cpp \
+    UNSLOTH_AUTO_INSTALL=0
+RUN git init /opt/llama.cpp \
+    && git -C /opt/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp \
+    && git -C /opt/llama.cpp fetch --depth 1 origin 44be98f057e9f9902a8ee12630e181c7f8ec2953 \
+    && git -C /opt/llama.cpp checkout --detach FETCH_HEAD \
+    && test "$(git -C /opt/llama.cpp rev-parse HEAD)" = 44be98f057e9f9902a8ee12630e181c7f8ec2953 \
+    && cmake -S /opt/llama.cpp -B /opt/llama.cpp/build \
+        -DGGML_CUDA=OFF -DGGML_HIP=OFF -DBUILD_SHARED_LIBS=OFF \
+        -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF \
+    && cmake --build /opt/llama.cpp/build --target llama-quantize -j4 \
+    && ln -s /opt/llama.cpp/build/bin/llama-quantize /opt/llama.cpp/llama-quantize \
+    && test -f /opt/llama.cpp/convert_hf_to_gguf.py \
+    && test -x /opt/llama.cpp/llama-quantize
+ENTRYPOINT []

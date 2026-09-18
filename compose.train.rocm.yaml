@@ -1,0 +1,30 @@
+name: docker-k8s-finetune-rocm
+services:
+  train:
+    image: docker-k8s-finetune-train:rocm-e0fd6548
+    build:
+      context: .
+      dockerfile: Dockerfile.train.rocm
+    platform: linux/amd64
+    entrypoint: []
+    working_dir: /workspace/project
+    init: true
+    shm_size: "8gb"
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - "${VIDEO_GID:-44}"
+      - "${RENDER_GID:-992}"
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      PYTHONPATH: /workspace/project/src
+      HF_HOME: /workspace/cache/huggingface
+      HIP_VISIBLE_DEVICES: "0"
+      ROCR_VISIBLE_DEVICES: "0"
+      TOKENIZERS_PARALLELISM: "false"
+    volumes:
+      - .:/workspace/project
+      - ./.cache/huggingface:/workspace/cache/huggingface
+    command: ["python", "-m", "docker_k8s_finetune.cli", "train", "--config", "config/training.rocm.yaml"]

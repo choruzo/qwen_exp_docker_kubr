@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+from copy import deepcopy
 import json
 import logging
 import math
@@ -11,6 +12,7 @@ from typing import Any, Mapping
 from ..benchmark.core import judge_provenance, syntax_provenance
 from ..config import load_yaml
 from ..errors import PipelineError
+from ..dedupe.exact import canonical_content
 from ..io import atomic_write_json, content_hash, file_sha256, stable_json
 from ..schema import utc_now_iso
 from .callbacks import build_checkpoint_provenance_callback, build_vram_callback
@@ -48,6 +50,67 @@ def _warmup_steps(
     return max(1, math.ceil(total_steps * warmup_ratio))
 
 
+def _verify_validation_redaction(
+    config: Mapping[str, Any], statistics: Mapping[str, Any], path: Path,
+) -> dict[str, Any]:
+    """Accept the one pinned post-split credential redaction without changing the manifest."""
+    if config.get("runtime", {}).get("accelerator") != "rocm":
+        raise PipelineError("Validation redaction exception is restricted to the ROCm profile")
+    exception = config.get("data", {}).get("validation_redaction")
+    if not isinstance(exception, Mapping):
+        raise PipelineError("Validation split differs from the frozen manifest without a redaction exception")
+    required = {
+        "manifest_sha256", "manifest_bytes", "actual_sha256", "actual_bytes",
+        "record_line", "source_record_id", "recorded_content_hash", "redacted_content_hash",
+    }
+    if not required.issubset(exception):
+        raise PipelineError("Validation redaction exception is incomplete")
+    recorded = statistics.get("outputs", {}).get("validation", {})
+    actual_hash = file_sha256(path)
+    expected_values = (
+        (recorded.get("sha256"), exception.get("manifest_sha256")),
+        (recorded.get("bytes"), exception.get("manifest_bytes")),
+        (actual_hash, exception.get("actual_sha256")),
+        (path.stat().st_size, exception.get("actual_bytes")),
+    )
+    if any(observed != expected for observed, expected in expected_values):
+        raise PipelineError("Validation redaction exception does not match the pinned files")
+
+    mismatches: list[tuple[int, str, str, str]] = []
+    try:
+        with path.open(encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, 1):
+                record = json.loads(line)
+                meta = record["meta"]
+                recorded_hash = str(meta["content_hash"])
+                actual_content_hash = content_hash(canonical_content(record))
+                if actual_content_hash != recorded_hash:
+                    mismatches.append((
+                        line_number, str(meta["source_record_id"]),
+                        recorded_hash, actual_content_hash,
+                    ))
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise PipelineError("Cannot audit validation record hashes") from exc
+    expected_mismatch = (
+        int(exception["record_line"]), str(exception["source_record_id"]),
+        str(exception["recorded_content_hash"]), str(exception["redacted_content_hash"]),
+    )
+    if mismatches != [expected_mismatch]:
+        raise PipelineError("Validation record hashes do not match the pinned redaction exception")
+
+    reconciled = deepcopy(dict(statistics))
+    reconciled["outputs"]["validation"] = {
+        **recorded,
+        "sha256": actual_hash,
+        "bytes": path.stat().st_size,
+        "manifest_sha256": exception["manifest_sha256"],
+        "redaction_exception": {key: exception[key] for key in (
+            "record_line", "source_record_id", "recorded_content_hash", "redacted_content_hash",
+        )},
+    }
+    return reconciled
+
+
 def _verify_final_split(config: Mapping[str, Any], root: Path) -> dict[str, Any]:
     data = config["data"]
     statistics_path = root / str(data["split_statistics"])
@@ -65,7 +128,10 @@ def _verify_final_split(config: Mapping[str, Any], root: Path) -> dict[str, Any]
         if not path.is_file() or not expected:
             raise PipelineError(f"Final {split_name} split or its recorded hash is missing")
         if file_sha256(path) != expected:
-            raise PipelineError(f"Final {split_name} split hash differs from split_statistics.json")
+            if split_name == "validation":
+                statistics = _verify_validation_redaction(config, statistics, path)
+            else:
+                raise PipelineError(f"Final {split_name} split hash differs from split_statistics.json")
     return statistics
 
 
@@ -154,11 +220,15 @@ def run_training_preflight(
     if smoke_test:
         smoke = config["smoke_test"]
         input_path = root / str(smoke["input"])
-        train_records = load_chatml(input_path, limit=int(smoke["train_records"]))
+        train_records = load_chatml(
+            input_path, limit=int(smoke["train_records"]), offset=int(smoke.get("train_offset", 0))
+        )
+        validation_input = root / str(smoke.get("validation_input", smoke["input"]))
         validation_records = load_chatml(
-            input_path,
+            validation_input,
             limit=int(smoke["validation_records"]),
-            offset=int(smoke["train_records"]),
+            offset=int(smoke.get("validation_offset", 0)) if "validation_input" in smoke
+            else int(smoke["train_records"]),
         )
     else:
         data = config["data"]
@@ -176,6 +246,7 @@ def run_training_preflight(
             "input": str(input_path),
             "train_records_checked": len(train_records),
             "validation_records_checked": len(validation_records),
+            **({"validation_identity": statistics["outputs"]["validation"]} if not smoke_test else {}),
         },
     }
     return result
@@ -258,7 +329,18 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
         raise PipelineError("Training dependencies are unavailable; run through compose.train.yaml") from exc
 
     if not torch.cuda.is_available():
-        raise PipelineError("CUDA GPU is required for QLoRA training")
+        raise PipelineError("PyTorch cannot see a GPU for training")
+    accelerator = config.get("runtime", {}).get("accelerator", "cuda")
+    if accelerator == "rocm":
+        if not torch.version.hip:
+            raise PipelineError("ROCm profile requires a PyTorch HIP build")
+        expected_gfx = str(config["runtime"].get("expected_gfx", ""))
+        properties = torch.cuda.get_device_properties(0)
+        observed_gfx = str(getattr(properties, "gcnArchName", ""))
+        if expected_gfx and not observed_gfx.startswith(expected_gfx):
+            raise PipelineError(f"Expected {expected_gfx}; found {observed_gfx}")
+        if int(properties.total_memory) < 30 * 1024 ** 3:
+            raise PipelineError("ROCm profile requires the 32 GB discrete GPU")
 
     smoke = config["smoke_test"]
     train_limit = int(smoke["train_records"]) if attempt.smoke_test else None
@@ -266,8 +348,15 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
     split_statistics = None
     if attempt.smoke_test:
         smoke_input = root / str(smoke["input"])
-        train_records = load_chatml(smoke_input, limit=train_limit)
-        validation_records = load_chatml(smoke_input, limit=validation_limit, offset=int(smoke["train_records"]))
+        train_records = load_chatml(
+            smoke_input, limit=train_limit, offset=int(smoke.get("train_offset", 0))
+        )
+        validation_input = root / str(smoke.get("validation_input", smoke["input"]))
+        validation_records = load_chatml(
+            validation_input, limit=validation_limit,
+            offset=int(smoke.get("validation_offset", 0)) if "validation_input" in smoke
+            else int(smoke["train_records"]),
+        )
     else:
         data_config = config["data"]
         split_statistics = _verify_final_split(config, root)
@@ -330,20 +419,23 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
             for name in ("train", "validation", "test")
         }
         if split_statistics is not None
-        else {"smoke_input": file_sha256(smoke_input)}
+        else {"smoke_input": file_sha256(smoke_input), "smoke_validation": file_sha256(validation_input)}
     )
     checkpoint_contract = {
         "version": 1,
         "config_sha256": content_hash(stable_json(config)),
         "base_model": base_identity,
         "training_split": training_split_contract,
+        "validation_identity": (
+            split_statistics["outputs"]["validation"] if split_statistics is not None else None
+        ),
         "training_profile": {
             "name": attempt.profile,
             "max_seq_length": attempt.max_seq_length,
             "batch_size": attempt.batch_size,
             "gradient_accumulation_steps": attempt.gradient_accumulation_steps,
             "eval_batch_size": 1 if attempt.smoke_test else int(trainer_config["per_device_eval_batch_size"]),
-            "eval_steps": int(trainer_config["eval_steps"]),
+            "eval_steps": int(smoke.get("eval_steps", 1)) if attempt.smoke_test else int(trainer_config["eval_steps"]),
             "packing": bool(trainer_config["packing"]),
             "train_sampling_strategy": str(trainer_config["train_sampling_strategy"]),
         },
@@ -361,11 +453,13 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
     validation_dataset = Dataset.from_list(formatted_validation)
     metrics_root = root / str(config["output"]["metrics"])
     metrics_root.mkdir(parents=True, exist_ok=True)
-    checkpoint = None if attempt.smoke_test else latest_checkpoint(
-        attempt.output_dir, expected_fingerprint=checkpoint_fingerprint
-    )
+    checkpoint = None
+    if not attempt.smoke_test and trainer_config["resume_from_checkpoint"] == "auto":
+        checkpoint = latest_checkpoint(attempt.output_dir, expected_fingerprint=checkpoint_fingerprint)
     run_id = utc_now_iso()
-    vram_path = metrics_root / ("vram_smoke.jsonl" if attempt.smoke_test else "vram_by_epoch.jsonl")
+    vram_path = metrics_root / (
+        str(smoke.get("vram_name", "vram_smoke.jsonl")) if attempt.smoke_test else "vram_by_epoch.jsonl"
+    )
     tensorboard_path = metrics_root / "tensorboard"
     os.environ["TENSORBOARD_LOGGING_DIR"] = str(tensorboard_path)
     sft_args = SFTConfig(
@@ -390,9 +484,9 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
         weight_decay=float(trainer_config["weight_decay"]),
         optim=str(trainer_config["optimizer"]),
         eval_strategy=str(trainer_config["eval_strategy"]),
-        eval_steps=int(trainer_config["eval_steps"]),
+        eval_steps=int(smoke.get("eval_steps", 1)) if attempt.smoke_test else int(trainer_config["eval_steps"]),
         logging_steps=1 if attempt.smoke_test else int(trainer_config["logging_steps"]),
-        save_steps=int(trainer_config["save_steps"]),
+        save_steps=int(smoke.get("save_steps", 1)) if attempt.smoke_test else int(trainer_config["save_steps"]),
         save_total_limit=int(trainer_config["save_total_limit"]),
         report_to=str(trainer_config["report_to"]),
         seed=int(config["seed"]),
@@ -431,12 +525,21 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
         "smoke_test": attempt.smoke_test,
         "training_profile": attempt.profile,
         "model_reference": model_ref,
+        "runtime": {
+            "accelerator": accelerator,
+            "torch": torch.__version__,
+            "hip": torch.version.hip,
+            "cuda": torch.version.cuda,
+            "gpu": torch.cuda.get_device_name(0),
+            "gcn_arch": str(getattr(torch.cuda.get_device_properties(0), "gcnArchName", "")),
+            "gpu_total_memory_bytes": int(torch.cuda.get_device_properties(0).total_memory),
+        },
         "max_seq_length": attempt.max_seq_length,
         "batch_size": attempt.batch_size,
         "gradient_accumulation_steps": attempt.gradient_accumulation_steps,
         "effective_batch_size": attempt.effective_batch_size,
         "eval_batch_size": 1 if attempt.smoke_test else int(trainer_config["per_device_eval_batch_size"]),
-        "eval_steps": int(trainer_config["eval_steps"]),
+        "eval_steps": int(smoke.get("eval_steps", 1)) if attempt.smoke_test else int(trainer_config["eval_steps"]),
         "packing": bool(trainer_config["packing"]),
         "train_sampling_strategy": str(trainer_config["train_sampling_strategy"]),
         "resumed_from": checkpoint,
@@ -449,11 +552,18 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
             "validation": validation_length_filter,
         },
         "vram": _summarize_vram(vram_path, run_id),
+        "vram_final": {
+            "peak_allocated_gib": round(torch.cuda.max_memory_allocated() / (1024 ** 3), 4),
+            "peak_reserved_gib": round(torch.cuda.max_memory_reserved() / (1024 ** 3), 4),
+            "free_gib": round(torch.cuda.mem_get_info()[0] / (1024 ** 3), 4),
+            "total_gib": round(torch.cuda.mem_get_info()[1] / (1024 ** 3), 4),
+        },
         "checkpoint_contract": checkpoint_contract,
         "checkpoint_fingerprint": checkpoint_fingerprint,
     }
     if split_statistics is not None:
         result["training_split"] = training_split_contract
+        result["validation_identity"] = split_statistics["outputs"]["validation"]
         result["base_model"] = base_identity
     if not export:
         return result
@@ -580,7 +690,10 @@ def run_training(
             gc.collect()
     if result is None:
         raise PipelineError("Training attempts ended without a result")
-    report_path = (root / str(config["output"]["metrics"])) / ("smoke_result.json" if smoke_test else "training_result.json")
+    report_name = str(config["smoke_test"].get("result_name", "smoke_result.json")) if smoke_test else "training_result.json"
+    if Path(report_name).name != report_name:
+        raise PipelineError("Training result_name must be a filename")
+    report_path = (root / str(config["output"]["metrics"])) / report_name
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(result, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
     return result
