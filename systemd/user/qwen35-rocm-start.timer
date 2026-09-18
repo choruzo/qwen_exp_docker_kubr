@@ -3,7 +3,9 @@ Description=Resume Qwen3.5 ROCm training at 10:30 Madrid time; retry every 10 mi
 
 [Timer]
 OnCalendar=*-*-* 10:30:00 Europe/Madrid
-OnCalendar=*-*-* *:0/10:00 Europe/Madrid
+OnCalendar=*-*-* 10:30/10:00 Europe/Madrid
+OnCalendar=*-*-* 11..22:00/10:00 Europe/Madrid
+OnCalendar=*-*-* 23:00,10,20:00 Europe/Madrid
 AccuracySec=1s
 Persistent=true
 Unit=qwen35-rocm-start.service
