@@ -6,7 +6,14 @@ import logging
 import sys
 from pathlib import Path
 
-from .config import load_all, load_yaml, validate_auxiliary_configs, validate_sources_config, validate_splits_config
+from .config import (
+    load_all,
+    load_yaml,
+    validate_auxiliary_configs,
+    validate_cross_config,
+    validate_sources_config,
+    validate_splits_config,
+)
 from .errors import PipelineError
 
 
@@ -20,6 +27,7 @@ def _configure_logging(verbose: bool) -> None:
 def command_config_validate(args: argparse.Namespace) -> int:
     configs = load_all(args.config_dir)
     auxiliary = validate_auxiliary_configs(args.config_dir)
+    validate_cross_config(configs.sources, auxiliary)
     print(json.dumps({
         "sources": len(configs.sources["sources"]),
         "mass_extraction_allowed": configs.sources["mass_extraction_allowed"],
@@ -148,6 +156,28 @@ def command_benchmark(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_benchmark_judge(args: argparse.Namespace) -> int:
+    from .benchmark.pipeline import run_benchmark_judge
+
+    result = run_benchmark_judge(
+        variant=args.variant,
+        config_path=Path(args.config),
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
+
+def command_benchmark_syntax(args: argparse.Namespace) -> int:
+    from .benchmark.pipeline import run_benchmark_syntax
+
+    result = run_benchmark_syntax(
+        variant=args.variant,
+        config_path=Path(args.config),
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
+
 def command_report(args: argparse.Namespace) -> int:
     from .benchmark.report import run_report
 
@@ -229,6 +259,28 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_parser.add_argument("--skip-judge", action="store_true", help="Provisional use only")
     benchmark_parser.add_argument("--skip-syntax", action="store_true", help="Provisional use only")
     benchmark_parser.set_defaults(handler=command_benchmark)
+
+    syntax_parser = subparsers.add_parser(
+        "benchmark-syntax", help="Validate saved predictions with host Docker validators"
+    )
+    syntax_parser.add_argument(
+        "--variant",
+        choices=("baseline", "finetuned_safetensors", "finetuned_gguf"),
+        required=True,
+    )
+    syntax_parser.add_argument("--config", default="config/benchmark.yaml")
+    syntax_parser.set_defaults(handler=command_benchmark_syntax)
+
+    judge_parser = subparsers.add_parser(
+        "benchmark-judge", help="Judge saved full predictions after releasing the evaluated model"
+    )
+    judge_parser.add_argument(
+        "--variant",
+        choices=("baseline", "finetuned_safetensors", "finetuned_gguf"),
+        required=True,
+    )
+    judge_parser.add_argument("--config", default="config/benchmark.yaml")
+    judge_parser.set_defaults(handler=command_benchmark_judge)
 
     report_parser = subparsers.add_parser("report", help="Build the before/after comparison report")
     report_parser.add_argument("--config", default="config/benchmark.yaml")

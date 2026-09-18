@@ -12,6 +12,17 @@ from ..io import atomic_write_json, atomic_write_jsonl, file_sha256, read_jsonl
 from .core import assistant_content, extract_dockerfile, extract_yaml, parse_json_output
 
 
+_HADOLINT_SEVERITY = {"ignore": 0, "none": 0, "style": 1, "info": 2, "warning": 3, "error": 4}
+
+
+def _hadolint_issue_fails(issue: dict[str, Any], threshold: str) -> bool:
+    configured = str(threshold).lower()
+    if configured not in _HADOLINT_SEVERITY:
+        raise PipelineError(f"Unsupported hadolint failure threshold: {threshold}")
+    level = str(issue.get("level", "error")).lower()
+    return _HADOLINT_SEVERITY.get(level, _HADOLINT_SEVERITY["error"]) >= _HADOLINT_SEVERITY[configured]
+
+
 def _safe_recreate(path: Path, root: Path) -> None:
     resolved = path.resolve()
     if not resolved.is_relative_to(root.resolve()) or resolved == root.resolve():
@@ -70,23 +81,34 @@ def _validate_dockerfiles(work: Path, files: list[Path], config: dict[str, Any])
     if not files:
         return {}
     tool = config["hadolint"]
-    container_files = [f"/work/dockerfile/{path.name}" for path in files]
-    command = [
-        "docker", "run", "--rm", "--mount", _docker_mount(work), str(tool["image"]),
-        "/bin/hadolint", "--format", "json", "--failure-threshold", str(tool["failure_threshold"]),
-        *container_files,
-    ]
-    result = _run(command)
-    issues = parse_json_output(result.stdout)
+    batch_size = int(tool.get("batch_size", 200))
     invalid: dict[str, list[str]] = {}
-    for issue in issues:
-        filename = Path(str(issue.get("file", ""))).name
-        message = f"{issue.get('code', 'hadolint')}: {issue.get('message', 'lint failure')}"
-        invalid.setdefault(filename, []).append(message)
-    if result.returncode not in (0, 1):
-        raise PipelineError(f"hadolint failed with exit {result.returncode}: {result.stderr.strip()}")
-    if result.returncode == 1 and not invalid:
-        raise PipelineError(f"hadolint failed without structured issues: {result.stderr.strip()}")
+    for offset in range(0, len(files), batch_size):
+        container_files = [
+            f"/work/dockerfile/{path.name}" for path in files[offset : offset + batch_size]
+        ]
+        command = [
+            "docker", "run", "--rm", "--mount", _docker_mount(work), str(tool["image"]),
+            "/bin/hadolint", "--format", "json", "--failure-threshold", str(tool["failure_threshold"]),
+            *container_files,
+        ]
+        result = _run(command)
+        issues = parse_json_output(result.stdout)
+        batch_invalid = 0
+        for issue in issues:
+            if not _hadolint_issue_fails(issue, str(tool["failure_threshold"])):
+                continue
+            filename = Path(str(issue.get("file", ""))).name
+            message = (
+                f"{issue.get('code', 'hadolint')}[{issue.get('level', 'error')}]: "
+                f"{issue.get('message', 'lint failure')}"
+            )
+            invalid.setdefault(filename, []).append(message)
+            batch_invalid += 1
+        if result.returncode not in (0, 1):
+            raise PipelineError(f"hadolint failed with exit {result.returncode}: {result.stderr.strip()}")
+        if result.returncode == 1 and not batch_invalid:
+            raise PipelineError(f"hadolint failed without structured issues: {result.stderr.strip()}")
     return {filename: "; ".join(messages) for filename, messages in invalid.items()}
 
 
@@ -111,15 +133,44 @@ def run_syntax_validation(
     records = list(read_jsonl(input_path))
     candidates: dict[str, tuple[dict[str, Any], str, str]] = {}
     missing: dict[str, str] = {}
+    category_changes: Counter[str] = Counter()
     yaml_files: list[Path] = []
     dockerfile_files: list[Path] = []
+    reclassification = config.get("category_reclassification", {})
+    dockerfile_from_categories = {
+        str(value) for value in reclassification.get("dockerfile_from_categories", [])
+    }
+    missing_dockerfile_fallback = str(
+        reclassification.get("missing_dockerfile_fallback", "")
+    )
     for index, record in enumerate(records):
         meta = record.get("meta", {})
         category = str(meta.get("category", ""))
+        content_text = assistant_content(record)
+        dockerfile_content = extract_dockerfile(content_text)
+        if dockerfile_content is not None and category in dockerfile_from_categories:
+            original = category
+            category = "dockerfile"
+            meta["category"] = category
+            meta["category_reclassification"] = {
+                "from": original,
+                "to": category,
+                "reason": "dockerfile_block_detected",
+            }
+            category_changes[f"{original}->dockerfile"] += 1
+        elif category == "dockerfile" and dockerfile_content is None and missing_dockerfile_fallback:
+            category = missing_dockerfile_fallback
+            meta["category"] = category
+            meta["category_reclassification"] = {
+                "from": "dockerfile",
+                "to": category,
+                "reason": "dockerfile_block_missing",
+            }
+            category_changes[f"dockerfile->{category}"] += 1
         identifier = str(meta.get("content_hash") or meta.get("source_record_id") or f"record-{index}")
         filename_base = f"{index:06d}-{identifier[:16]}"
         if category == "generacion_yaml":
-            content = extract_yaml(assistant_content(record))
+            content = extract_yaml(content_text)
             if content is None:
                 missing[identifier] = "yaml_block_missing"
                 continue
@@ -128,7 +179,7 @@ def run_syntax_validation(
             yaml_files.append(path)
             candidates[path.name] = (record, identifier, "kubeconform")
         elif category == "dockerfile":
-            content = extract_dockerfile(assistant_content(record))
+            content = dockerfile_content
             if content is None:
                 missing[identifier] = "dockerfile_block_missing"
                 continue
@@ -184,6 +235,7 @@ def run_syntax_validation(
         },
         "input_by_source": dict(sorted(by_source_input.items())),
         "rejected_by_source": dict(sorted(by_source_rejected.items())),
+        "category_reclassification": dict(sorted(category_changes.items())),
         "outputs": {
             "accepted": {"path": outputs["accepted"], "sha256": accepted_hash},
             "rejected": {"path": outputs["rejected"], "sha256": rejected_hash},

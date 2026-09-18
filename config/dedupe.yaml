@@ -37,4 +37,6 @@ approximate:
     k8s_instructions: 2
     docker_nl_commands: 2
     kubernetes_stackoverflow_questions: 2
+    stackoverflow_docker: 2
+    github_resolved_issues: 2
     stack_yaml_k8s: 3

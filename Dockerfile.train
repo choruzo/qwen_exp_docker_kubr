@@ -13,7 +13,8 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache "transformers==5.2.0
         "torchao==0.16.0" \
     && uv pip install --python /opt/venv/bin/python --no-cache \
         "faiss-cpu==1.15.0" \
-    && /opt/venv/bin/python -c "from importlib.metadata import version; assert version('transformers') == '5.2.0'; assert version('flash-linear-attention') == '0.5.2'; assert version('torchao') == '0.16.0'; assert version('faiss-cpu') == '1.15.0'; assert version('sentence-transformers') == '5.2.0'"
+        "langdetect==1.0.9" \
+    && /opt/venv/bin/python -c "from importlib.metadata import version; assert version('transformers') == '5.2.0'; assert version('flash-linear-attention') == '0.5.2'; assert version('torchao') == '0.16.0'; assert version('faiss-cpu') == '1.15.0'; assert version('langdetect') == '1.0.9'; assert version('sentence-transformers') == '5.2.0'"
 
 # The upstream entrypoint chmods the whole bind-mounted workspace recursively.
 ENTRYPOINT []

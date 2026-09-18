@@ -12,6 +12,7 @@ haya sido generado sobre el test congelado.
 
 - Python 3.10-3.12 para ETL y pruebas.
 - Docker Desktop con backend WSL2 y acceso a la GPU NVIDIA.
+- Git LFS para versionar `data/processed/train.jsonl` (aprox. 167 MB).
 - Pesos originales en Modelo/Qwen3.5-4B.
 - Espacio para checkpoints, modelo fusionado y GGUF en el directorio artifacts.
 - Al menos 50 GB para el disco de Docker si se usa la imagen oficial de
@@ -30,15 +31,16 @@ se guarda en .cache/huggingface mediante bind mount y queda fuera de Git.
 
 ## Instalacion y comprobaciones
 
+    git lfs install
     python -m venv venv
     venv\Scripts\python -m pip install -e ".[extract,dedupe,test]"
     venv\Scripts\python -m docker_k8s_finetune.cli config-validate
     venv\Scripts\python -m pytest
     docker compose -f compose.train.yaml config --quiet
     docker compose -f compose.train.yaml build train
-    make status
+    venv\Scripts\python -m docker_k8s_finetune.cli pipeline-status
 
-`make status` verifica hashes y linaje de todas las etapas. Devuelve un codigo
+`pipeline-status` verifica hashes y linaje de todas las etapas. Devuelve un codigo
 distinto de cero y enumera los bloqueos mientras falte una fuente, la revision
 manual de reverse-instruction o un artefacto intermedio. El split final y el
 entrenamiento completo rechazan esas entradas incompletas; la excepcion
@@ -49,15 +51,29 @@ entrenamiento completo rechazan esas entradas incompletas; la excepcion
 Las fuentes, licencias y cuarentenas estan declaradas en config/sources.yaml.
 La extraccion masiva solo se habilita cuando ese archivo esta aprobado.
 
-    make extract
-    make clean
-    make normalize
+    venv\Scripts\python -m docker_k8s_finetune.cli extract
+    venv\Scripts\python -m docker_k8s_finetune.cli clean
+    venv\Scripts\python -m docker_k8s_finetune.cli normalize
+    venv\Scripts\python -m docker_k8s_finetune.cli dedupe --mode exact
+    docker compose -f compose.train.yaml run --rm train python -m docker_k8s_finetune.cli dedupe --mode approximate
+
+La deduplicacion semantica se realiza en la imagen Docker validada con Sentence
+Transformers y FAISS fijados.
 
 La normalizacion inversa requiere un endpoint OpenAI-compatible:
 
-    SYNTHETIC_LLM_BASE_URL=http://host.docker.internal:8080/v1
-    SYNTHETIC_LLM_MODEL=modelo-juez
-    SYNTHETIC_LLM_API_KEY=opcional
+    .\scripts\start-synthetic-qwen3-14b.ps1
+
+El lanzador habilita dos slots locales con 16K de contexto total (8192 por
+slot) y la normalizacion usa dos workers
+ordenados. El cache por candidato hace que una interrupcion pueda reanudarse
+sin regenerar respuestas ya validadas.
+    $env:SYNTHETIC_LLM_BASE_URL="http://127.0.0.1:8080/v1"
+    $env:SYNTHETIC_LLM_MODEL="qwen3-14b"
+
+El perfil local usa `G:\models\Qwen3-14B-Q5_K_M.gguf`, contexto total 16K y
+llama-server sobre la GPU. No requiere `SYNTHETIC_LLM_API_KEY`. Para otro
+proveedor OpenAI-compatible se pueden sustituir URL, modelo y clave.
 
 Primero se genera y revisa una muestra:
 
@@ -73,6 +89,11 @@ entonces se permite:
     venv\Scripts\python -m docker_k8s_finetune.cli validate-dataset
     venv\Scripts\python -m docker_k8s_finetune.cli split
 
+Para ejecuciones locales largas, `scripts/continue-after-reverse-generation.ps1`
+puede esperar al PID del generador y, solo si termina con codigo cero, liberar
+Qwen y encadenar deduplicacion exacta/semantica, validacion y split. Cada paso
+se detiene ante el primer error y `pipeline-status` valida el linaje final.
+
 La deduplicacion aproximada usa un modelo de embeddings fijado por commit. El
 split vuelve a calcular similitudes exactas entre train/validation/test, mueve
 fugas completas a train y hace backfill del mismo estrato. Tambien genera:
@@ -82,10 +103,16 @@ fugas completas a train y hace backfill del mismo estrato. Tambien genera:
 - benchmarks/test_manifest.jsonl y llm_judge_manifest.jsonl;
 - informes de sintaxis, deduplicacion y fugas.
 
+La ficha registra fecha UTC, numero de registros y bytes/SHA-256 de cada split,
+ademas de distribuciones por fuente, licencia y categoria.
+
 Fuentes que requieren credenciales:
 
-- GitHub issues: GITHUB_TOKEN.
-- Stack Overflow Docker via BigQuery: GOOGLE_CLOUD_PROJECT y credenciales ADC.
+- GitHub issues: `GITHUB_TOKEN`; puede obtenerse temporalmente con
+  `$env:GITHUB_TOKEN = gh auth token` despues de `gh auth login`.
+- Stack Overflow Docker via BigQuery: `GOOGLE_CLOUD_PROJECT` y credenciales ADC
+  creadas con `gcloud auth application-default login`. La consulta tiene un
+  limite duro de 70 GiB; el dry-run validado proceso 63,55 GiB.
 
 La generacion reverse-instruction requiere ademas SYNTHETIC_LLM_BASE_URL y
 SYNTHETIC_LLM_MODEL, seguida de la aprobacion manual descrita arriba.
@@ -99,52 +126,192 @@ runner usa FastVisionModel, congela vision y entrena solo lenguaje, atencion y
 MLP. La seleccion de modulos LoRA queda a Unsloth para cubrir tanto la atencion
 completa como la atencion lineal hibrida.
 
-    make train-preflight
-    make train-smoke
-    make train
+La revision del modelo base y los SHA-256 de ambos shards, indice, configuracion,
+tokenizer, plantilla de chat y processor estan fijados en
+`config/training.yaml`. El runner vuelve a calcularlos antes de cargar el modelo
+y rechaza cualquier diferencia.
 
-El perfil principal usa contexto 8192, batch por dispositivo 4 y acumulacion 4.
-Si CUDA devuelve OOM, reintenta con contexto 4096 y batch 1 x acumulacion 16.
-Los checkpoints se reanudan automaticamente. TensorBoard y la VRAM pico por
-epoca se guardan en artifacts/metrics.
+    venv\Scripts\python -m docker_k8s_finetune.cli train --smoke-test --preflight --no-export
+    docker compose -f compose.train.yaml run --build --rm train python -m docker_k8s_finetune.cli train --smoke-test --no-export
+    docker compose -f compose.train.yaml run --build --rm train python -m docker_k8s_finetune.cli train
+
+El perfil principal usa contexto 8192, batch por dispositivo 2 y acumulacion 8.
+El batch efectivo sigue siendo 16. La prueba real con batch 4 alcanzo 15,99 GiB
+de VRAM, dejo solo 59-64 MiB libres y llevo Docker/WSL (13,9 GiB de RAM) a
+usar swap, por lo que no era un perfil reproducible ni dejaba margen seguro.
+Batch 1 x acumulacion 16 elimino la presion (unos 9,4 GiB de VRAM y solo
+115 MiB de swap), pero fue un 35-50 % mas lento en los pasos estables. Batch 2
+es el perfil intermedio elegido para conservar margen y mejorar throughput.
+El sampler agrupa deterministamente por longitud para evitar que un unico ejemplo
+largo rellene todo un batch de ejemplos cortos hasta 8192 tokens.
+Si CUDA devuelve OOM, conserva primero el contexto 8192 y reduce a batch 1 x
+acumulacion 16; despues reduce el contexto a 4096 con el mismo batch efectivo.
+El resultado deja constancia del
+perfil que termino el entrenamiento y de todos los perfiles que fallaron.
+Los checkpoints se guardan cada 25 updates (conservando los tres mas recientes)
+y se reanudan automaticamente. Tras un corte, el runner ignora
+directorios de checkpoint incompletos y elige el step mas alto que conserve
+estado, pesos, optimizador, scheduler y RNG coherentes. TensorBoard y la VRAM
+pico por epoca se guardan en artifacts/metrics. Cada perfil escribe bajo su
+propio subdirectorio de `artifacts/checkpoints` para impedir colisiones entre
+el perfil principal y los fallbacks OOM. Si se corta la energia durante un
+fallback, `artifacts/metrics/oom_state.json` recuerda atomicamente los perfiles
+que ya agotaron CUDA para la misma configuracion y split; al reanudar los omite,
+vuelve a intentar siempre el ultimo perfil disponible y elimina el estado al
+terminar correctamente.
+
+La validacion usa batch 4 y se ejecuta cada 500 updates. Esto conserva 21 puntos
+intermedios de `val_loss` durante las tres epocas, ademas del resultado final,
+sin repetir 104 veces un barrido completo de los 3109 ejemplos de validacion.
+El smoke conserva batch de evaluacion 1 para mantener su consumo minimo.
+
+La longitud renderizada puede auditarse con:
+
+    docker compose -f compose.train.yaml run --rm train python scripts/audit-token-lengths.py
+
+En el split congelado actual, 57 registros de train (0,102 %) y 2 de validacion
+(0,064 %) superan 8192 tokens. El runner los excluye antes de tokenizar para SFT
+en vez de truncarlos silenciosamente; registra cada hash, categoria y longitud,
+ademas de la huella ordenada del subconjunto realmente entrenado, tanto en
+`training_result.json` como en `export_manifest.json`. Los dos edge cases largos
+del test se conservan para evaluar robustez y no intervienen en el entrenamiento.
+
+El entrenamiento completo se niega a arrancar hasta que
+`benchmarks/baseline_results.json` sea final, incluya sintaxis y LLM-juez y su
+hash corresponda exactamente al test congelado. El smoke test no requiere ese
+baseline.
 
 Al finalizar se exportan:
 
 - artifacts/adapter;
 - artifacts/merged en safetensors;
 - artifacts/gguf con q4_k_m y q8_0.
+- artifacts/export_manifest.json con SHA-256 de cada archivo exportado y los
+  hashes exactos de train/validation/test usados para entrenar.
+
+El runner usa la ruta devuelta por la version instalada de Unsloth (que genera
+`<merged>_gguf`), la traslada a `artifacts/gguf` y comprueba que existan tanto
+q4_k_m como q8_0 antes de permitir la creacion del manifiesto de exportacion.
+
+Los benchmarks fine-tuned verifican ese manifiesto antes de cargar el modelo
+merged o conectarse al servidor GGUF. Para GGUF tambien consultan `/props` de
+llama-server y exigen que alias, ruta, SHA-256 y cuantizacion `q4_k_m`
+correspondan al archivo manifestado; no basta con que el endpoint responda.
 
 ## Benchmark e informe
 
 El baseline debe ejecutarse antes del entrenamiento:
 
-    make benchmark-baseline
+    docker compose -f compose.train.yaml run --build --rm train python -m docker_k8s_finetune.cli benchmark --variant baseline --skip-judge --skip-syntax
+
+Las variantes Unsloth usan lotes de inferencia de 4 solicitudes y el mismo
+presupuesto maximo de 2048 tokens. El tamano del lote forma parte de la huella
+del cache; cambiarlo no mezcla salidas ni metricas de regimenes distintos. La
+generacion por lotes conserva escritura atomica por registro y vuelve a modo
+secuencial para cualquier lote que falle. Los backends HTTP que no implementan
+batching nativo conservan ejecucion secuencial. Cada resultado registra la latencia
+concurrente y el throughput agregado del lote; el recuento de cada salida se
+corta en su primer EOS para excluir el padding que completa el lote. Los misses
+se ordenan establemente por longitud del prompt antes de agruparse para reducir
+padding; nunca se consulta la longitud de la respuesta de referencia. La
+pertenencia al grupo queda identificada en cada cache. Si un corte deja solo
+parte de un lote escrita, al reanudar se regenera ese grupo completo y no se
+desplazan los emparejamientos posteriores. Una
+salida solo se considera truncada si alcanza el presupuesto sin haber emitido
+EOS; terminar exactamente en el ultimo token permitido no produce un falso
+positivo. Una instruccion fija que exige respuestas concisas y bloques YAML/Dockerfile
+completos. Cada resultado registra `truncated`; una tasa superior al 1 % hace
+fallar el gate `completion.generation` y mantiene el benchmark provisional. La
+cache es reanudable y los cambios exclusivos del umbral de auditoria no fuerzan
+una nueva inferencia. Las respuestas completas creadas con el limite anterior
+de 1536 se migran de forma segura; las que alcanzaron ese techo se regeneran.
+Si una salida alcanza 2048 tokens, se reintenta una sola vez con penalizacion de
+repeticion 1.10 para cortar bucles degenerados. Las caches anteriores a esta
+politica migran las respuestas no truncadas sin regenerarlas y envian las
+truncadas directamente al reintento. Se registran intentos, tokens totales y
+latencia acumulada para no ocultar el coste del rescate.
 
 Despues del entrenamiento:
 
-    make benchmark-finetuned
+    docker compose -f compose.train.yaml run --build --rm train python -m docker_k8s_finetune.cli benchmark --variant finetuned_safetensors --skip-judge --skip-syntax
 
 Para GGUF se inicia llama.cpp u Ollama con el GGUF exportado y se configuran:
 
-    GGUF_LLM_BASE_URL=http://localhost:8080/v1
-    GGUF_LLM_MODEL=qwen-docker-k8s
-    GGUF_LLM_API_KEY=opcional
+    powershell -ExecutionPolicy Bypass -File scripts/start-finetuned-gguf.ps1
 
-    make benchmark-gguf
+    $env:GGUF_LLM_BASE_URL="http://host.docker.internal:8080/v1"
+    $env:GGUF_LLM_MODEL="qwen-docker-k8s"
+    $env:GGUF_LLM_API_KEY=""
+
+    docker compose -f compose.train.yaml run --build --rm train python -m docker_k8s_finetune.cli benchmark --variant finetuned_gguf --skip-judge --skip-syntax
+
+El lanzador selecciona el q4_k_m desde `artifacts/export_manifest.json`, exige
+una unica coincidencia y verifica bytes y SHA-256 antes de iniciar llama.cpp.
 
 El juez externo usa un prompt fijo en benchmarks/judge_prompt.md:
 
-    JUDGE_LLM_BASE_URL=http://localhost:8081/v1
-    JUDGE_LLM_MODEL=modelo-juez
-    JUDGE_LLM_API_KEY=opcional
+En este equipo se usa Gemma 4 12B Q6 como juez independiente. Debe iniciarse
+solo despues de liberar de la GPU el modelo que se esta evaluando:
+
+    powershell -ExecutionPolicy Bypass -File scripts/start-judge-gemma4.ps1 -VerifyOnly
+    powershell -ExecutionPolicy Bypass -File scripts/start-judge-gemma4.ps1
+
+El lanzador comprueba el tamano (10.685.011.360 bytes) y el SHA-256
+`eb0f252863d14f7782122a4ac7e8744ed6e4a9fc132584d94686a9441f7c5d35`.
+El cliente exige ademas que `/props` confirme el alias, nombre de archivo y
+cuantizacion fijados en `config/benchmark.yaml`; esa identidad queda guardada
+en cada resultado juzgado.
+
+En otra consola se configuran las variables y se completa el juicio guardado:
+
+    $env:JUDGE_LLM_BASE_URL="http://host.docker.internal:8081/v1"
+    $env:JUDGE_LLM_MODEL="gemma-4-12b-judge"
+    $env:JUDGE_LLM_API_KEY=""
+
+La sintaxis se completa despues desde Windows, donde el proceso tiene acceso al
+daemon Docker que ejecuta las imagenes fijadas de kubeconform y hadolint. Esto
+evita depender de Docker-in-Docker dentro de la imagen de entrenamiento:
+
+    venv\Scripts\python -m docker_k8s_finetune.cli benchmark-syntax --variant baseline
+    venv\Scripts\python -m docker_k8s_finetune.cli benchmark-syntax --variant finetuned_safetensors
+    venv\Scripts\python -m docker_k8s_finetune.cli benchmark-syntax --variant finetuned_gguf
+
+Con una sola GPU de 16 GB, la inferencia y el juicio se ejecutan en dos fases.
+Los objetivos `benchmark-baseline`, `benchmark-finetuned` y `benchmark-gguf`
+guardan primero todas las predicciones. La fase de sintaxis actualiza el mismo
+JSON de forma atomica. Tras liberar el modelo evaluado e iniciar el juez, se
+completa tambien el juicio de forma reanudable:
+
+    docker compose -f compose.train.yaml run --rm train python -m docker_k8s_finetune.cli benchmark-judge --variant baseline
+    docker compose -f compose.train.yaml run --rm train python -m docker_k8s_finetune.cli benchmark-judge --variant finetuned_safetensors
+    docker compose -f compose.train.yaml run --rm train python -m docker_k8s_finetune.cli benchmark-judge --variant finetuned_gguf
+
+Cada respuesta del juez se persiste atomicamente. Un resultado solo deja de
+ser provisional cuando cubre el test congelado completo, la sintaxis y el
+juicio.
+
+La inferencia tambien usa un cache por registro en
+`benchmarks/work/<variante>/generation_cache`. Su huella incluye mensajes,
+backend y parametros de generacion. Una interrupcion reanuda predicciones ya
+guardadas y cualquier error pendiente mantiene el benchmark como provisional.
 
 Finalmente:
 
-    make report
+    docker compose -f compose.train.yaml run --rm train python -m docker_k8s_finetune.cli report
 
 El informe compara por categoria exact match, similitud semantica, validez
 kubeconform/hadolint, LLM-juez, latencia, tokens por segundo, fuera de dominio
 y degradacion por cuantizacion. Cualquier regresion se enumera explicitamente.
+El historial completo de train/eval se persiste en
+`artifacts/metrics/training_result.json`; el informe final exige esos puntos (o
+un `trainer_state.json` de respaldo) y genera `benchmarks/training_loss.svg`.
+Tambien rechaza variantes incompletas o comparaciones que difieran en test,
+parametros de generacion, prompt/manifiesto del juez o identidad del GGUF juez.
+Los resultados de inferencia directa registran tambien el modelo de GPU, VRAM
+total, capacidad CUDA y versiones de Torch/CUDA usadas para que las medidas de
+latencia y rendimiento queden ligadas al hardware real.
+La generacion evaluada y el juez usan temperatura cero y la semilla 3407,
+registrada en `config/benchmark.yaml` y en cada resultado.
 
 ## Reproducibilidad y seguridad
 

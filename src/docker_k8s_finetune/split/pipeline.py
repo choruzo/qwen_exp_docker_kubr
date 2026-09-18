@@ -9,8 +9,23 @@ from ..completeness import assess_pipeline_completeness
 from ..config import load_yaml, validate_splits_config
 from ..errors import PipelineError
 from ..io import atomic_write_json, atomic_write_jsonl, read_jsonl
+from ..schema import utc_now_iso
 from .audit import audit_and_repair
 from .core import allocate_stratum, deterministic_key, hard_complexity, split_statistics
+
+
+_LICENSE_URLS = {
+    "Apache-2.0": "https://www.apache.org/licenses/LICENSE-2.0",
+    "BSD-2-Clause": "https://opensource.org/license/bsd-2-clause",
+    "BSD-3-Clause": "https://opensource.org/license/bsd-3-clause",
+    "CC-BY-4.0": "https://creativecommons.org/licenses/by/4.0/",
+    "CC-BY-SA-4.0": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "CC0-1.0": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "ISC": "https://opensource.org/license/isc-license-txt",
+    "MIT": "https://opensource.org/license/mit",
+    "Unlicense": "https://unlicense.org/",
+    "Zlib": "https://opensource.org/license/zlib",
+}
 
 
 def _required_meta(record: dict[str, Any], field: str) -> Any:
@@ -154,6 +169,8 @@ def _write_datasheet(
         "## Resumen",
         "",
         f"- Registros totales: {len(all_records)}",
+        f"- Fecha de generacion (UTC): {statistics['created_at']}",
+        f"- Tamano JSONL total: {sum(int(value['bytes']) for value in statistics['outputs'].values())} bytes",
         f"- Semilla de split: {config['seed']}",
         f"- Estrategia: {config['strategy']['algorithm']}",
         f"- Fugas exactas y semanticas: verificadas en {config['output']['leakage_report']}",
@@ -162,16 +179,19 @@ def _write_datasheet(
         "",
         "## Splits",
         "",
-        "| Split | Registros | SHA-256 |",
-        "|---|---:|---|",
+        "| Split | Registros | Bytes | SHA-256 |",
+        "|---|---:|---:|---|",
     ]
     for split_name in ("train", "validation", "test"):
         output = statistics["outputs"][split_name]
-        lines.append(f"| {split_name} | {output['count']} | {output['sha256']} |")
+        lines.append(f"| {split_name} | {output['count']} | {output['bytes']} | {output['sha256']} |")
     lines.extend(["", "## Fuentes", "", "| Fuente | Registros |", "|---|---:|"])
     lines.extend(f"| {name} | {count} |" for name, count in sorted(sources.items()))
-    lines.extend(["", "## Licencias", "", "| Licencia | Registros |", "|---|---:|"])
-    lines.extend(f"| {name} | {count} |" for name, count in sorted(licenses.items()))
+    lines.extend(["", "## Licencias", "", "| Licencia | URL canonica | Registros |", "|---|---|---:|"])
+    lines.extend(
+        f"| {name} | {_LICENSE_URLS.get(name, 'n/a')} | {count} |"
+        for name, count in sorted(licenses.items())
+    )
     lines.extend(["", "## Categorias", "", "| Categoria | Registros |", "|---|---:|"])
     lines.extend(f"| {name} | {count} |" for name, count in sorted(categories.items()))
     lines.extend([
@@ -350,8 +370,13 @@ def run_split(
     output_dir.mkdir(parents=True, exist_ok=True)
     output_hashes = {}
     for split_name, filename_key in (("train", "train"), ("validation", "validation"), ("test", "test")):
-        count, digest = atomic_write_jsonl(output_dir / config["output"]["files"][filename_key], records_by_split[split_name])
-        output_hashes[split_name] = {"count": count, "sha256": digest}
+        split_path = output_dir / config["output"]["files"][filename_key]
+        count, digest = atomic_write_jsonl(split_path, records_by_split[split_name])
+        output_hashes[split_name] = {
+            "count": count,
+            "bytes": split_path.stat().st_size,
+            "sha256": digest,
+        }
     manifest = []
     for split_name, split_records in records_by_split.items():
         manifest.extend({
@@ -378,6 +403,7 @@ def run_split(
     )
 
     statistics = {
+        "created_at": utc_now_iso(),
         "seed": seed,
         "total": total,
         "provisional": bool(skip_semantic_audit or not completeness["ready_for_final_split"]),

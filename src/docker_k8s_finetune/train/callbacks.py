@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ..io import atomic_write_json
+
 
 def build_vram_callback(metrics_path: Path, *, run_id: str, append: bool = False) -> Any:
     import torch
@@ -41,3 +43,25 @@ def build_vram_callback(metrics_path: Path, *, run_id: str, append: bool = False
                 handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
     return VramCallback()
+
+
+def build_checkpoint_provenance_callback(
+    contract: dict[str, Any], *, fingerprint: str,
+) -> Any:
+    from transformers import TrainerCallback
+
+    class CheckpointProvenanceCallback(TrainerCallback):
+        def on_save(self, args: Any, state: Any, control: Any, **kwargs: Any) -> None:
+            checkpoint = Path(args.output_dir) / f"checkpoint-{int(state.global_step)}"
+            if not checkpoint.is_dir():
+                raise RuntimeError(f"Trainer checkpoint directory is missing after save: {checkpoint}")
+            atomic_write_json(
+                checkpoint / "checkpoint_provenance.json",
+                {
+                    "version": 1,
+                    "fingerprint": fingerprint,
+                    "contract": contract,
+                },
+            )
+
+    return CheckpointProvenanceCallback()

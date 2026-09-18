@@ -19,6 +19,8 @@ reverse_instruction:
   model_env: SYNTHETIC_LLM_MODEL
   timeout_seconds: 120
   max_retries: 3
+  max_new_tokens: 512
+  parallel_workers: 2
   max_reference_chars: 16000
   review_config: config/reverse_instruction_review.yaml
   cache_dir: data/interim/normalized/reverse_cache
@@ -28,5 +30,8 @@ reverse_instruction:
   rejected_full: data/quarantine/reverse_generated_full_rejected.jsonl
   prompt: >-
     Genera una sola instrucción natural y específica cuya respuesta correcta sea
-    exactamente el contenido técnico proporcionado. No menciones que has visto
-    un fragmento, no añadas hechos y devuelve JSON estricto con la clave user.
+    exactamente el contenido técnico proporcionado. La instrucción debe ser
+    autosuficiente: incluye los nombres, valores y restricciones necesarios y no
+    uses referencias vagas como "el fragmento", "el documento", "el ejemplo" o
+    "los datos proporcionados". No menciones que has visto una referencia, no
+    añadas hechos y devuelve JSON estricto con la clave user.

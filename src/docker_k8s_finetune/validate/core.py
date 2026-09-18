@@ -4,6 +4,13 @@ import re
 from typing import Any, Mapping
 
 
+_FENCED_BLOCK_RE = re.compile(r"```[^\r\n]*\r?\n(.*?)```", re.DOTALL)
+_DOCKERFILE_INSTRUCTION_RE = re.compile(
+    r"(?mi)^\s*(FROM|ARG|RUN|COPY|ADD|CMD|ENTRYPOINT|ENV|EXPOSE|WORKDIR|USER|"
+    r"VOLUME|LABEL|HEALTHCHECK|SHELL|STOPSIGNAL|ONBUILD)\b"
+)
+
+
 def assistant_content(record: Mapping[str, Any]) -> str:
     messages = record.get("messages")
     if not isinstance(messages, list):
@@ -33,13 +40,24 @@ def extract_yaml(text: str) -> str | None:
 
 
 def extract_dockerfile(text: str) -> str | None:
-    blocks = fenced_blocks(text, ("dockerfile", "docker"))
+    blocks = [
+        match.group(1).strip()
+        for match in _FENCED_BLOCK_RE.finditer(text)
+        if _looks_like_dockerfile(match.group(1))
+    ]
     if blocks:
         return "\n\n".join(blocks)
     stripped = text.strip()
-    if re.search(r"(?mi)^\s*FROM\s+\S+", stripped):
+    if _looks_like_dockerfile(stripped):
         return stripped
     return None
+
+
+def _looks_like_dockerfile(value: str) -> bool:
+    instructions = [match.upper() for match in _DOCKERFILE_INSTRUCTION_RE.findall(value)]
+    if len(instructions) < 2 or "FROM" not in instructions:
+        return False
+    return instructions[0] in {"ARG", "FROM"}
 
 
 def parse_json_output(value: str) -> list[dict[str, Any]]:

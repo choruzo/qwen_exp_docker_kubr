@@ -6,6 +6,10 @@ outputs:
   report: data/interim/reports/syntax_validation_report.json
   work_dir: data/interim/validation/work
 
+category_reclassification:
+  dockerfile_from_categories: [troubleshooting, concepto, comando_cli, arquitectura]
+  missing_dockerfile_fallback: concepto
+
 kubeconform:
   image: ghcr.io/yannh/kubeconform@sha256:85dbef6b4b312b99133decc9c6fc9495e9fc5f92293d4ff3b7e1b30f5611823c
   version: v0.7.0
@@ -16,4 +20,5 @@ kubeconform:
 hadolint:
   image: hadolint/hadolint@sha256:9a3944b7fddcb947d1ffd90829ac1a6e5c30479223358f249d8b96c7d0019e27
   version: v2.15.1
-  failure_threshold: warning
+  failure_threshold: error
+  batch_size: 200

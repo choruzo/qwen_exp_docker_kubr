@@ -1,0 +1,20 @@
+{
+  "embedding_audit": {
+    "events": [],
+    "final_leaks": 0,
+    "initial_leaks": 0,
+    "iterations": 0,
+    "status": "clean",
+    "threshold": 0.92
+  },
+  "exact_overlap": {
+    "train-test": 0,
+    "train-validation": 0,
+    "validation-test": 0
+  },
+  "semantic_group_overlap": {
+    "train-test": 0,
+    "train-validation": 0,
+    "validation-test": 0
+  }
+}

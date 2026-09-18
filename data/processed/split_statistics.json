@@ -1,0 +1,163 @@
+{
+  "benchmark_manifests": {
+    "judge": 150,
+    "test": 3111
+  },
+  "created_at": "2026-08-18T08:42:12.549463Z",
+  "datasheet": "data/processed/DATASHEET.md",
+  "hard_test": {
+    "count": 500,
+    "sources": [
+      "argocd_docs",
+      "cert_manager_docs",
+      "docker_docs",
+      "istio_docs",
+      "kubernetes_docs",
+      "kubernetes_stackoverflow_questions",
+      "stackoverflow_docker"
+    ]
+  },
+  "outputs": {
+    "test": {
+      "bytes": 9467967,
+      "count": 3111,
+      "sha256": "0eb2a9580bf5c1581ea542dc6068eeeb6e88443998c885aaa94ab988b3e17cc1"
+    },
+    "train": {
+      "bytes": 174710516,
+      "count": 55999,
+      "sha256": "0881e496673e276849c617e7ec08627727d0e83618c54a2763045f2e012a36c3"
+    },
+    "validation": {
+      "bytes": 9581692,
+      "count": 3111,
+      "sha256": "bb5c3c04504fd7d307e4f3305ffae9c8ab5765882e85964f9bcfccbb2b25fe4a"
+    }
+  },
+  "pipeline_completeness": {
+    "expected_final_sources": [
+      "argocd_docs",
+      "cert_manager_docs",
+      "containerd_docs",
+      "coredns_docs",
+      "docker_docs",
+      "docker_nl_commands",
+      "github_resolved_issues",
+      "helm_docs",
+      "ingress_nginx_docs",
+      "istio_docs",
+      "k8s_instructions",
+      "kubernetes_docs",
+      "kubernetes_stackoverflow_questions",
+      "stack_yaml_k8s",
+      "stackoverflow_docker"
+    ],
+    "extracted_final_sources": [
+      "argocd_docs",
+      "cert_manager_docs",
+      "containerd_docs",
+      "coredns_docs",
+      "docker_docs",
+      "docker_nl_commands",
+      "github_resolved_issues",
+      "helm_docs",
+      "ingress_nginx_docs",
+      "istio_docs",
+      "k8s_instructions",
+      "kubernetes_docs",
+      "kubernetes_stackoverflow_questions",
+      "stack_yaml_k8s",
+      "stackoverflow_docker"
+    ],
+    "issues": [],
+    "missing_environment": [],
+    "ready_for_final_split": true,
+    "version": 1
+  },
+  "provisional": false,
+  "seed": 3407,
+  "splits": {
+    "test": {
+      "categories": {
+        "arquitectura": 156,
+        "comando_cli": 312,
+        "concepto": 269,
+        "dockerfile": 312,
+        "generacion_yaml": 610,
+        "troubleshooting": 1452
+      },
+      "count": 3111,
+      "sources": {
+        "argocd_docs": 67,
+        "cert_manager_docs": 62,
+        "containerd_docs": 23,
+        "coredns_docs": 27,
+        "docker_docs": 317,
+        "docker_nl_commands": 25,
+        "helm_docs": 33,
+        "ingress_nginx_docs": 8,
+        "istio_docs": 30,
+        "k8s_instructions": 9,
+        "kubernetes_docs": 307,
+        "kubernetes_stackoverflow_questions": 709,
+        "stack_yaml_k8s": 588,
+        "stackoverflow_docker": 906
+      }
+    },
+    "train": {
+      "categories": {
+        "arquitectura": 1372,
+        "comando_cli": 849,
+        "concepto": 4833,
+        "dockerfile": 862,
+        "generacion_yaml": 10957,
+        "troubleshooting": 37126
+      },
+      "count": 55999,
+      "sources": {
+        "argocd_docs": 696,
+        "cert_manager_docs": 655,
+        "containerd_docs": 286,
+        "coredns_docs": 294,
+        "docker_docs": 3988,
+        "docker_nl_commands": 70,
+        "helm_docs": 212,
+        "ingress_nginx_docs": 136,
+        "istio_docs": 448,
+        "k8s_instructions": 165,
+        "kubernetes_docs": 3684,
+        "kubernetes_stackoverflow_questions": 17549,
+        "stack_yaml_k8s": 10587,
+        "stackoverflow_docker": 17229
+      }
+    },
+    "validation": {
+      "categories": {
+        "arquitectura": 156,
+        "comando_cli": 312,
+        "concepto": 269,
+        "dockerfile": 312,
+        "generacion_yaml": 610,
+        "troubleshooting": 1452
+      },
+      "count": 3111,
+      "sources": {
+        "argocd_docs": 74,
+        "cert_manager_docs": 56,
+        "containerd_docs": 28,
+        "coredns_docs": 24,
+        "docker_docs": 323,
+        "docker_nl_commands": 23,
+        "helm_docs": 36,
+        "ingress_nginx_docs": 7,
+        "istio_docs": 40,
+        "k8s_instructions": 9,
+        "kubernetes_docs": 299,
+        "kubernetes_stackoverflow_questions": 694,
+        "stack_yaml_k8s": 588,
+        "stackoverflow_docker": 910
+      }
+    }
+  },
+  "total": 62221
+}

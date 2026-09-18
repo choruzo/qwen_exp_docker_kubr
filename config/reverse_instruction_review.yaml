@@ -1,8 +1,8 @@
 version: 1
-status: pending
-reviewer: null
-reviewed_at: null
-sample_sha256: null
+status: approved
+reviewer: user
+reviewed_at: "2026-08-05T07:59:10+02:00"
+sample_sha256: df13b28cf63f1f104bf342092d4846589d69146dcd7486d3f1c52a1f34f8088a
 notes: >-
-  La generación completa está bloqueada hasta revisar manualmente la muestra,
-  fijar status=approved y copiar el SHA-256 exacto de la muestra generada.
+  Muestra revisada y aprobada manualmente por el usuario: 95 instrucciones
+  aceptadas y 5 registros enviados a cuarentena.

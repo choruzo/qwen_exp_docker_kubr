@@ -8,19 +8,25 @@ import os
 from pathlib import Path
 from typing import Any, Mapping
 
+from ..benchmark.core import judge_provenance, syntax_provenance
 from ..config import load_yaml
 from ..errors import PipelineError
-from ..io import file_sha256
+from ..io import atomic_write_json, content_hash, file_sha256, stable_json
 from ..schema import utc_now_iso
-from .callbacks import build_vram_callback
+from .callbacks import build_checkpoint_provenance_callback, build_vram_callback
 from .core import (
     TrainingAttempt,
+    artifact_files_manifest,
     build_attempt,
+    finalize_gguf_export,
+    filter_formatted_by_token_length,
     format_chatml,
     latest_checkpoint,
     load_chatml,
     inspect_local_model,
     resolve_model_reference,
+    resolve_text_tokenizer,
+    verify_local_model_provenance,
     validate_training_config,
 )
 
@@ -63,6 +69,66 @@ def _verify_final_split(config: Mapping[str, Any], root: Path) -> dict[str, Any]
     return statistics
 
 
+def _verify_baseline(
+    config: Mapping[str, Any], root: Path, split_statistics: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    prerequisite = config.get("prerequisites", {})
+    if not prerequisite.get("require_final_baseline", False):
+        return None
+    path = root / str(prerequisite["baseline_results"])
+    if not path.is_file():
+        raise PipelineError(f"Final baseline must be completed before full training: {path}")
+    try:
+        baseline = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PipelineError(f"Cannot read baseline prerequisite: {exc}") from exc
+    if baseline.get("variant") != "baseline" or baseline.get("provisional"):
+        raise PipelineError("Full training requires a non-provisional baseline result")
+    expected_hash = split_statistics.get("outputs", {}).get("test", {}).get("sha256")
+    if not expected_hash or baseline.get("split_test_sha256") != expected_hash:
+        raise PipelineError("Baseline result does not match the frozen test split")
+    model_config = config.get("model")
+    if isinstance(model_config, Mapping):
+        model_reference = resolve_model_reference(config, root)
+        model_path = Path(model_reference)
+        expected_model_provenance = (
+            verify_local_model_provenance(model_path, model_config)
+            if model_path.is_dir()
+            else {"repository": model_reference, "revision": model_config.get("revision")}
+        )
+        if baseline.get("model_provenance") != expected_model_provenance:
+            raise PipelineError("Baseline result uses different base-model provenance")
+    completion = baseline.get("completion") or {}
+    if not all(completion.get(stage, False) for stage in ("full_test", "generation", "syntax", "judge")):
+        raise PipelineError("Baseline result has not completed generation, syntax and judge stages")
+    benchmark_config_path = root / str(prerequisite["benchmark_config"])
+    if not benchmark_config_path.is_file():
+        raise PipelineError(f"Benchmark configuration is missing: {benchmark_config_path}")
+    benchmark_config = load_yaml(benchmark_config_path)
+    if baseline.get("judge_provenance") != judge_provenance(benchmark_config, root):
+        raise PipelineError("Baseline judge prompt or manifest differs from the current benchmark configuration")
+    if benchmark_config.get("semantic_similarity") and baseline.get(
+        "semantic_similarity_config"
+    ) != benchmark_config["semantic_similarity"]:
+        raise PipelineError("Baseline semantic similarity model differs from benchmark configuration")
+    if benchmark_config.get("syntax_validation", {}).get("enabled") and baseline.get(
+        "syntax_provenance"
+    ) != syntax_provenance(benchmark_config, root):
+        raise PipelineError("Baseline syntax validator configuration differs from current configuration")
+    expected_judge = benchmark_config.get("llm_judge", {}).get("model_identity")
+    if expected_judge:
+        judge_runtime = baseline.get("judge_runtime")
+        if not isinstance(judge_runtime, Mapping) or judge_runtime.get("expected") != expected_judge:
+            raise PipelineError("Baseline judge model identity differs from the benchmark configuration")
+        served_judge = judge_runtime.get("served")
+        if not isinstance(served_judge, Mapping) or any(
+            served_judge.get(field) != expected_judge.get(field)
+            for field in ("alias", "filename", "quantization")
+        ):
+            raise PipelineError("Baseline does not prove the served judge model identity")
+    return baseline
+
+
 def run_training_preflight(
     *, config_path: Path = Path("config/training.yaml"), smoke_test: bool = True,
 ) -> dict[str, Any]:
@@ -72,11 +138,19 @@ def run_training_preflight(
     model_ref = resolve_model_reference(config, root)
     model_path = Path(model_ref)
     trainer = config["trainer"]
-    model_report = inspect_local_model(
-        model_path,
-        instruction_delimiter=str(trainer["instruction_delimiter"]),
-        response_delimiter=str(trainer["response_delimiter"]),
-    ) if model_path.is_dir() else {"remote_reference": model_ref}
+    if model_path.is_dir():
+        provenance = verify_local_model_provenance(model_path, config["model"])
+        model_report = inspect_local_model(
+            model_path,
+            instruction_delimiter=str(trainer["instruction_delimiter"]),
+            response_delimiter=str(trainer["response_delimiter"]),
+        )
+        model_report["provenance"] = provenance
+    else:
+        model_report = {
+            "remote_reference": model_ref,
+            "revision": str(config["model"]["revision"]),
+        }
     if smoke_test:
         smoke = config["smoke_test"]
         input_path = root / str(smoke["input"])
@@ -88,7 +162,8 @@ def run_training_preflight(
         )
     else:
         data = config["data"]
-        _verify_final_split(config, root)
+        statistics = _verify_final_split(config, root)
+        _verify_baseline(config, root, statistics)
         train_records = load_chatml(root / str(data["train"]))
         validation_records = load_chatml(root / str(data["validation"]))
         input_path = root / str(data["train"])
@@ -108,6 +183,36 @@ def run_training_preflight(
 
 def _is_cuda_oom(exc: BaseException) -> bool:
     return "out of memory" in str(exc).lower() and "cuda" in str(exc).lower()
+
+
+def _oom_state_contract(config: Mapping[str, Any], root: Path) -> str:
+    statistics_path = root / str(config.get("data", {}).get("split_statistics", ""))
+    statistics_sha256 = file_sha256(statistics_path) if statistics_path.is_file() else None
+    return content_hash(stable_json({
+        "training_config": config,
+        "split_statistics_sha256": statistics_sha256,
+    }))
+
+
+def _load_oom_state(path: Path, *, contract: str) -> list[str]:
+    if not path.is_file():
+        return []
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if value.get("contract") != contract or not isinstance(value.get("failed_profiles"), list):
+        return []
+    return [str(profile) for profile in value["failed_profiles"]]
+
+
+def _write_oom_state(path: Path, *, contract: str, failed_profiles: list[str]) -> None:
+    atomic_write_json(path, {
+        "version": 1,
+        "updated_at": utc_now_iso(),
+        "contract": contract,
+        "failed_profiles": list(dict.fromkeys(failed_profiles)),
+    })
 
 
 def _dtype(value: str, torch: Any) -> Any:
@@ -158,23 +263,34 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
     smoke = config["smoke_test"]
     train_limit = int(smoke["train_records"]) if attempt.smoke_test else None
     validation_limit = int(smoke["validation_records"]) if attempt.smoke_test else None
+    split_statistics = None
     if attempt.smoke_test:
         smoke_input = root / str(smoke["input"])
         train_records = load_chatml(smoke_input, limit=train_limit)
         validation_records = load_chatml(smoke_input, limit=validation_limit, offset=int(smoke["train_records"]))
     else:
         data_config = config["data"]
-        _verify_final_split(config, root)
+        split_statistics = _verify_final_split(config, root)
+        _verify_baseline(config, root, split_statistics)
         train_records = load_chatml(root / str(data_config["train"]))
         validation_records = load_chatml(root / str(data_config["validation"]))
     model_ref = resolve_model_reference(config, root)
+    base_provenance = None
+    if Path(model_ref).is_dir():
+        base_provenance = verify_local_model_provenance(Path(model_ref), config["model"])
     LOGGER.info("Loading %s with FastVisionModel (text only, seq=%d)", model_ref, attempt.max_seq_length)
-    model, tokenizer = FastVisionModel.from_pretrained(
-        model_name=model_ref,
-        max_seq_length=attempt.max_seq_length,
-        dtype=_dtype(str(config["model"]["dtype"]), torch),
-        load_in_4bit=bool(config["model"]["load_in_4bit"]),
+    model_load_kwargs = {
+        "model_name": model_ref,
+        "max_seq_length": attempt.max_seq_length,
+        "dtype": _dtype(str(config["model"]["dtype"]), torch),
+        "load_in_4bit": bool(config["model"]["load_in_4bit"]),
+    }
+    if not Path(model_ref).is_dir():
+        model_load_kwargs["revision"] = str(config["model"]["revision"])
+    model, processor = FastVisionModel.from_pretrained(
+        **model_load_kwargs,
     )
+    tokenizer = resolve_text_tokenizer(processor)
     lora = config["lora"]
     architecture = config["architecture"]
     model = FastVisionModel.get_peft_model(
@@ -191,12 +307,61 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
         random_state=int(config["seed"]),
     )
     FastVisionModel.for_training(model)
-    train_dataset = Dataset.from_list(format_chatml(train_records, tokenizer))
-    validation_dataset = Dataset.from_list(format_chatml(validation_records, tokenizer))
     trainer_config = config["trainer"]
+    formatted_train, train_length_filter = filter_formatted_by_token_length(
+        format_chatml(train_records, tokenizer),
+        tokenizer,
+        max_length=attempt.max_seq_length,
+        batch_size=int(trainer_config["length_audit_batch_size"]),
+    )
+    formatted_validation, validation_length_filter = filter_formatted_by_token_length(
+        format_chatml(validation_records, tokenizer),
+        tokenizer,
+        max_length=attempt.max_seq_length,
+        batch_size=int(trainer_config["length_audit_batch_size"]),
+    )
+    base_identity = base_provenance or {
+        "repository": config["model"]["name"],
+        "revision": config["model"]["revision"],
+    }
+    training_split_contract = (
+        {
+            name: split_statistics["outputs"][name]["sha256"]
+            for name in ("train", "validation", "test")
+        }
+        if split_statistics is not None
+        else {"smoke_input": file_sha256(smoke_input)}
+    )
+    checkpoint_contract = {
+        "version": 1,
+        "config_sha256": content_hash(stable_json(config)),
+        "base_model": base_identity,
+        "training_split": training_split_contract,
+        "training_profile": {
+            "name": attempt.profile,
+            "max_seq_length": attempt.max_seq_length,
+            "batch_size": attempt.batch_size,
+            "gradient_accumulation_steps": attempt.gradient_accumulation_steps,
+            "eval_batch_size": 1 if attempt.smoke_test else int(trainer_config["per_device_eval_batch_size"]),
+            "eval_steps": int(trainer_config["eval_steps"]),
+        },
+        "processing": {
+            "processor_class": type(processor).__name__,
+            "text_tokenizer_class": type(tokenizer).__name__,
+        },
+        "length_filter": {
+            "train": train_length_filter,
+            "validation": validation_length_filter,
+        },
+    }
+    checkpoint_fingerprint = content_hash(stable_json(checkpoint_contract))
+    train_dataset = Dataset.from_list(formatted_train)
+    validation_dataset = Dataset.from_list(formatted_validation)
     metrics_root = root / str(config["output"]["metrics"])
     metrics_root.mkdir(parents=True, exist_ok=True)
-    checkpoint = None if attempt.smoke_test else latest_checkpoint(attempt.output_dir)
+    checkpoint = None if attempt.smoke_test else latest_checkpoint(
+        attempt.output_dir, expected_fingerprint=checkpoint_fingerprint
+    )
     run_id = utc_now_iso()
     vram_path = metrics_root / ("vram_smoke.jsonl" if attempt.smoke_test else "vram_by_epoch.jsonl")
     tensorboard_path = metrics_root / "tensorboard"
@@ -206,7 +371,9 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
         num_train_epochs=float(trainer_config["epochs"]),
         max_steps=attempt.max_steps,
         per_device_train_batch_size=attempt.batch_size,
-        per_device_eval_batch_size=1,
+        per_device_eval_batch_size=(
+            1 if attempt.smoke_test else int(trainer_config["per_device_eval_batch_size"])
+        ),
         gradient_accumulation_steps=attempt.gradient_accumulation_steps,
         learning_rate=float(trainer_config["learning_rate"]),
         lr_scheduler_type=str(trainer_config["scheduler"]),
@@ -233,6 +400,7 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
         max_length=attempt.max_seq_length,
         dataset_text_field="text",
         packing=bool(trainer_config["packing"]),
+        train_sampling_strategy=str(trainer_config["train_sampling_strategy"]),
     )
     trainer = SFTTrainer(
         model=model,
@@ -240,7 +408,12 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
         train_dataset=train_dataset,
         eval_dataset=validation_dataset,
         args=sft_args,
-        callbacks=[build_vram_callback(vram_path, run_id=run_id, append=checkpoint is not None)],
+        callbacks=[
+            build_vram_callback(vram_path, run_id=run_id, append=checkpoint is not None),
+            build_checkpoint_provenance_callback(
+                checkpoint_contract, fingerprint=checkpoint_fingerprint
+            ),
+        ],
     )
     trainer = train_on_responses_only(
         trainer,
@@ -254,16 +427,30 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
     result = {
         "status": "trained",
         "smoke_test": attempt.smoke_test,
+        "training_profile": attempt.profile,
         "model_reference": model_ref,
         "max_seq_length": attempt.max_seq_length,
         "batch_size": attempt.batch_size,
         "gradient_accumulation_steps": attempt.gradient_accumulation_steps,
         "effective_batch_size": attempt.effective_batch_size,
+        "eval_batch_size": 1 if attempt.smoke_test else int(trainer_config["per_device_eval_batch_size"]),
+        "eval_steps": int(trainer_config["eval_steps"]),
         "resumed_from": checkpoint,
         "metrics": train_result.metrics,
         "evaluation_metrics": evaluation_metrics,
+        "log_history": [dict(item) for item in trainer.state.log_history],
+        "length_filter": {
+            "action": str(trainer_config["overlength_action"]),
+            "train": train_length_filter,
+            "validation": validation_length_filter,
+        },
         "vram": _summarize_vram(vram_path, run_id),
+        "checkpoint_contract": checkpoint_contract,
+        "checkpoint_fingerprint": checkpoint_fingerprint,
     }
+    if split_statistics is not None:
+        result["training_split"] = training_split_contract
+        result["base_model"] = base_identity
     if not export:
         return result
 
@@ -272,18 +459,49 @@ def _train_once(config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
     merged_dir = root / str(output["merged"])
     gguf_dir = root / str(output["gguf"])
     model.save_pretrained(adapter_dir)
-    tokenizer.save_pretrained(adapter_dir)
-    model.save_pretrained_merged(merged_dir, tokenizer, save_method="merged_16bit")
-    model.save_pretrained_gguf(
-        gguf_dir,
-        tokenizer,
+    processor.save_pretrained(adapter_dir)
+    # The installed Unsloth exporter writes merged safetensors to the supplied
+    # directory and quantizations to <directory>_gguf. Reuse merged_dir and
+    # relocate only after both requested GGUF variants have been verified.
+    gguf_export = model.save_pretrained_gguf(
+        merged_dir,
+        processor,
         quantization_method=list(output["gguf_quantizations"]),
     )
+    finalized_gguf = finalize_gguf_export(
+        gguf_export,
+        configured_dir=gguf_dir,
+        merged_dir=merged_dir,
+        root=root,
+        required_quantizations=output["gguf_quantizations"],
+    )
+    if split_statistics is None:
+        raise PipelineError("Full export requires verified split statistics")
+    manifest_path = root / str(output["manifest"])
+    export_manifest = {
+        "version": 1,
+        "created_at": utc_now_iso(),
+        "base_model": result["base_model"],
+        "training_split": result["training_split"],
+        "training_length_filter": result["length_filter"],
+        "training_contract": {
+            "fingerprint": checkpoint_fingerprint,
+            "contract": checkpoint_contract,
+        },
+        "artifacts": {
+            "adapter": artifact_files_manifest(adapter_dir, root),
+            "merged": artifact_files_manifest(merged_dir, root),
+            "gguf": artifact_files_manifest(gguf_dir, root),
+        },
+        "gguf_quantizations": list(output["gguf_quantizations"]),
+    }
+    atomic_write_json(manifest_path, export_manifest)
     result["exports"] = {
         "adapter": str(adapter_dir),
         "merged": str(merged_dir),
         "gguf": str(gguf_dir),
-        "quantizations": list(output["gguf_quantizations"]),
+        "quantizations": list(finalized_gguf["quantizations"]),
+        "manifest": str(manifest_path),
     }
     return result
 
@@ -297,23 +515,67 @@ def run_training(
     root = Path.cwd()
     config = load_yaml(config_path)
     validate_training_config(config)
-    attempt = build_attempt(config, root, smoke_test=smoke_test)
-    try:
-        result = _train_once(config, root, attempt, export=export and not smoke_test)
-    except RuntimeError as exc:
-        fallback_enabled = bool(config["trainer"]["oom_fallback"]["enabled"])
-        if smoke_test or not fallback_enabled or not _is_cuda_oom(exc):
-            raise
-        LOGGER.warning("CUDA OOM with primary settings; retrying the configured conservative profile")
+    attempts = [build_attempt(config, root, smoke_test=smoke_test)]
+    if not smoke_test and config["trainer"]["oom_fallback"]["enabled"]:
+        attempts.extend(
+            build_attempt(config, root, smoke_test=False, fallback_index=index)
+            for index in range(len(config["trainer"]["oom_fallback"]["profiles"]))
+        )
+    oom_state_path = root / str(config["output"]["metrics"]) / "oom_state.json"
+    oom_contract = _oom_state_contract(config, root)
+    known_oom_profiles = [] if smoke_test else _load_oom_state(
+        oom_state_path, contract=oom_contract
+    )
+    all_attempts = attempts
+    attempts = [
+        attempt
+        for index, attempt in enumerate(all_attempts)
+        if index == len(all_attempts) - 1 or attempt.profile not in known_oom_profiles
+    ]
+    skipped_profiles = [
+        attempt.profile for attempt in all_attempts
+        if attempt not in attempts and attempt.profile in known_oom_profiles
+    ]
+    if skipped_profiles:
+        LOGGER.warning("Skipping profiles with persisted CUDA OOM: %s", skipped_profiles)
+    oom_profiles: list[str] = list(skipped_profiles)
+    result = None
+    for index, attempt in enumerate(attempts):
         try:
-            import torch
-            torch.cuda.empty_cache()
-        except ImportError:
-            pass
-        gc.collect()
-        fallback = build_attempt(config, root, smoke_test=False, fallback=True)
-        result = _train_once(config, root, fallback, export=export)
-        result["oom_fallback_used"] = True
+            result = _train_once(
+                config,
+                root,
+                attempt,
+                export=export and not smoke_test,
+            )
+            if not smoke_test and (attempt.profile != "primary" or oom_profiles):
+                result["oom_fallback_used"] = True
+                result["oom_failed_profiles"] = oom_profiles
+            if oom_state_path.is_file():
+                oom_state_path.unlink()
+            break
+        except RuntimeError as exc:
+            if smoke_test or not _is_cuda_oom(exc) or index + 1 >= len(attempts):
+                raise
+            oom_profiles.append(attempt.profile)
+            _write_oom_state(
+                oom_state_path,
+                contract=oom_contract,
+                failed_profiles=oom_profiles,
+            )
+            LOGGER.warning(
+                "CUDA OOM with profile %s; retrying profile %s",
+                attempt.profile,
+                attempts[index + 1].profile,
+            )
+            try:
+                import torch
+                torch.cuda.empty_cache()
+            except ImportError:
+                pass
+            gc.collect()
+    if result is None:
+        raise PipelineError("Training attempts ended without a result")
     report_path = (root / str(config["output"]["metrics"])) / ("smoke_result.json" if smoke_test else "training_result.json")
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(result, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")

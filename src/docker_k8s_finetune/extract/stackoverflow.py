@@ -35,8 +35,8 @@ WITH candidate_answers AS (
   WHERE q.score >= @min_question_score
     AND a.score >= @min_answer_score
     AND EXISTS (
-      SELECT 1 FROM UNNEST(@tags) tag
-      WHERE q.tags LIKE CONCAT('%<', tag, '>%')
+      SELECT 1 FROM UNNEST(SPLIT(LOWER(q.tags), '|')) question_tag
+      WHERE question_tag IN UNNEST(@tags)
     )
 )
 SELECT * EXCEPT(answer_rank)
@@ -58,7 +58,9 @@ class StackOverflowBigQueryExtractor(BaseExtractor):
         if not project:
             raise ExtractionError(f"Set {project_env} to a billed Google Cloud project for BigQuery extraction")
         client = bigquery.Client(project=project)
+        maximum_bytes_billed = int(float(self.source_config.get("maximum_bytes_billed_gib", 70)) * 1024**3)
         job_config = bigquery.QueryJobConfig(
+            maximum_bytes_billed=maximum_bytes_billed,
             query_parameters=[
                 bigquery.ArrayQueryParameter("tags", "STRING", self.source_config.get("tags", [])),
                 bigquery.ScalarQueryParameter("min_question_score", "INT64", self.source_config.get("min_question_score", 1)),

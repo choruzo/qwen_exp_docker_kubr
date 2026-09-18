@@ -16,6 +16,37 @@ from ..validate.pipeline import _validate_dockerfiles, _validate_kubernetes
 from .core import parse_judge_payload
 
 
+def _verify_judge_props(
+    props: Mapping[str, Any], *, expected_identity: Mapping[str, Any],
+) -> dict[str, Any]:
+    alias = str(expected_identity["alias"])
+    if str(props.get("model_alias")) != alias:
+        raise PipelineError(
+            f"Judge llama-server alias mismatch: {props.get('model_alias')} != {alias}"
+        )
+    served_raw = str(props.get("model_path", "")).strip()
+    served_name = served_raw.replace("\\", "/").rsplit("/", 1)[-1]
+    expected_name = str(expected_identity["filename"])
+    if served_name.casefold() != expected_name.casefold():
+        raise PipelineError(
+            f"Judge llama-server model mismatch: {served_name} != {expected_name}"
+        )
+    quantization = str(expected_identity["quantization"])
+    normalized_quantization = quantization.replace("_", "").replace("-", "").casefold()
+    normalized_name = served_name.replace("_", "").replace("-", "").casefold()
+    if normalized_quantization not in normalized_name:
+        raise PipelineError(
+            f"Judge llama-server quantization mismatch: {served_name} lacks {quantization}"
+        )
+    return {
+        "alias": alias,
+        "server_model_path": served_raw,
+        "filename": expected_name,
+        "quantization": quantization,
+        "ftype": props.get("model_ftype"),
+    }
+
+
 def semantic_scores(
     references: list[str], predictions: list[str], config: Mapping[str, Any],
 ) -> list[float]:
@@ -100,6 +131,30 @@ class JudgeClient:
         self.model = os.environ.get(str(config["model_env"]), "")
         if not self.base_url or not self.model:
             raise PipelineError(f"Set {config['base_url_env']} and {config['model_env']} for LLM judging")
+        identity = config.get("model_identity")
+        self.provenance: dict[str, Any] | None = None
+        if isinstance(identity, Mapping):
+            expected = dict(identity)
+            if self.model != str(expected["alias"]):
+                raise PipelineError(
+                    f"Judge model alias differs from fixed identity: {self.model} != {expected['alias']}"
+                )
+            self.provenance = {"expected": expected}
+            if config.get("require_llama_props"):
+                import requests
+
+                server_root = self.base_url[:-3] if self.base_url.endswith("/v1") else self.base_url
+                try:
+                    response = requests.get(
+                        f"{server_root}/props",
+                        timeout=float(config.get("identity_timeout_seconds", 10)),
+                    )
+                    response.raise_for_status()
+                except requests.RequestException as exc:
+                    raise PipelineError(f"Cannot verify judge llama-server identity: {exc}") from exc
+                self.provenance["served"] = _verify_judge_props(
+                    response.json(), expected_identity=expected
+                )
 
     def score(self, *, question: str, reference: str, candidate: str) -> dict[str, Any]:
         import requests
@@ -113,6 +168,7 @@ class JudgeClient:
         )
         payload = {
             "model": self.model,
+            "seed": int(self.config["seed"]),
             "messages": [
                 {"role": "system", "content": self.prompt},
                 {"role": "user", "content": user},

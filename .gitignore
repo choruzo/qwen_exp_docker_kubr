@@ -12,3 +12,7 @@ data/interim/
 data/quarantine/
 artifacts/
 benchmarks/work/
+
+# Local background-run logs; benchmark JSON artifacts remain versionable.
+/.*.out.log
+/.*.err.log

@@ -365,6 +365,7 @@ sources:
     license_url: https://stackoverflow.com/help/licensing
     attribution_fields: [question_id, answer_id, owner_user_id, display_name, link]
     max_records: 20000
+    maximum_bytes_billed_gib: 70
     fallback:
       kind: stackexchange_data_dump
       archive_env: STACKOVERFLOW_DUMP_PATH
@@ -389,7 +390,9 @@ sources:
     license_strategy: repository_declared
     normalization: issue_resolution_pair
     category: troubleshooting
-    max_records_per_repository: 2500
+    # Balanced cap: 525 recent real resolutions across seven projects augment
+    # Stack Overflow without exhausting an authenticated GitHub hourly quota.
+    max_records_per_repository: 75
     repositories:
       - name: moby/moby
         labels_any_regex: "(?i)(kind/bug|area/bug|bug)"
