@@ -43,7 +43,8 @@ case "${1:-}" in
     if [[ "$current_state" == running || "$current_state" == paused ]]; then
       exit 0
     fi
-    if ! find "$checkpoint_dir" -maxdepth 1 -type d -name 'checkpoint-*' -print -quit 2>/dev/null | rg -q .; then
+    checkpoint="$(find "$checkpoint_dir" -maxdepth 1 -type d -name 'checkpoint-*' -print -quit 2>/dev/null)"
+    if [[ -z "$checkpoint" ]]; then
       log 'No ROCm checkpoint found; refusing to restart from step zero.'
       exit 1
     fi
