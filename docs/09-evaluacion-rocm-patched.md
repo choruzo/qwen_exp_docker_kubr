@@ -28,3 +28,12 @@ El juez todavía no ha producido métricas: necesita que existan las respuestas 
 3. Ejecutar validación sintáctica y juez con la identidad congelada para ambas variantes.
 4. Generar el informe comparativo y analizar resultados por categoría y regresiones.
 5. Solo si los gates de calidad se cumplen, ejecutar inferencia real de `finetuned_gguf`, validar sintaxis y pasar el mismo juez.
+
+## Horario automático de inferencia
+
+Los timers `qwen35-rocm-benchmark-start.timer` y `qwen35-rocm-benchmark-stop.timer` limitan la generación de `baseline` y `finetuned_safetensors` a 08:00–23:30, hora de Madrid. El inicio comprueba cada 10 minutos si debe reanudar una variante desde su caché; la parada diaria detiene el contenedor activo a las 23:30. Un resultado incompleto o una salida inesperada requieren diagnóstico manual y no se reintentan indefinidamente. El juez y GGUF no se arrancan automáticamente.
+
+```sh
+systemctl --user list-timers --all | rg 'qwen35-rocm-benchmark'
+bash scripts/schedule_rocm_benchmark.sh status
+```
