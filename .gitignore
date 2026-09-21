@@ -12,7 +12,9 @@ data/interim/
 data/quarantine/
 artifacts/
 benchmarks/work/
+benchmarks/**/work/
+benchmarks/rocm/**/*_results.json
 
-# Local background-run logs; benchmark JSON artifacts remain versionable.
+# Local raw benchmark outputs and background-run logs; reports remain versionable.
 /.*.out.log
 /.*.err.log

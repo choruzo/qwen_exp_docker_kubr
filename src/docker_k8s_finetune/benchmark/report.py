@@ -163,6 +163,7 @@ def _runtime_label(result: Mapping[str, Any]) -> str:
     if device:
         capability = runtime.get("compute_capability")
         suffix = f" (CUDA sm_{str(capability).replace('.', '')})" if capability else ""
+        suffix = f" (ROCm {runtime['gcn_arch']})" if runtime.get("gcn_arch") else suffix
         return f"{device}{suffix}"
     served = runtime.get("served_model")
     if isinstance(served, Mapping) and served.get("alias"):
@@ -170,6 +171,29 @@ def _runtime_label(result: Mapping[str, Any]) -> str:
     if runtime.get("model"):
         return f"{runtime.get('backend', 'endpoint')}: {runtime['model']}"
     return str(runtime.get("backend", "n/a"))
+
+
+def _in_process_runtime_signature(result: Mapping[str, Any], variant: str) -> tuple[str, ...]:
+    """Return a strict, accelerator-aware signature for direct model inference."""
+    runtime = result.get("runtime")
+    common_fields = ("backend", "device", "torch_version")
+    if not isinstance(runtime, Mapping) or any(
+        not str(runtime.get(field, "")).strip() for field in common_fields
+    ):
+        raise PipelineError(f"Benchmark result lacks complete runtime identity: {variant}")
+    accelerator = str(runtime.get("accelerator") or (
+        "cuda" if runtime.get("compute_capability") and runtime.get("torch_cuda_version") else ""
+    ))
+    accelerator_fields = {
+        "cuda": ("compute_capability", "torch_cuda_version"),
+        "rocm": ("gcn_arch", "torch_hip_version"),
+    }.get(accelerator)
+    if accelerator_fields is None or any(
+        not str(runtime.get(field, "")).strip() for field in accelerator_fields
+    ):
+        raise PipelineError(f"Benchmark result lacks complete {accelerator} runtime identity: {variant}")
+    return (*tuple(str(runtime[field]) for field in common_fields), accelerator,
+            *tuple(str(runtime[field]) for field in accelerator_fields))
 
 
 def build_markdown(
@@ -435,23 +459,12 @@ def run_report(
     test_hashes = {str(result.get("split_test_sha256") or "") for result in results.values()}
     if len(test_hashes) != 1 or "" in test_hashes:
         raise PipelineError("Benchmark variants were not run against the same frozen test split")
-    runtime_fields = (
-        "backend",
-        "device",
-        "compute_capability",
-        "torch_version",
-        "torch_cuda_version",
-    )
-    cuda_signatures = {}
-    for variant in ("baseline", "finetuned_safetensors"):
-        runtime = results[variant].get("runtime")
-        if not isinstance(runtime, Mapping) or any(
-            not str(runtime.get(field, "")).strip() for field in runtime_fields
-        ):
-            raise PipelineError(f"Benchmark result lacks complete CUDA runtime identity: {variant}")
-        cuda_signatures[variant] = tuple(str(runtime[field]) for field in runtime_fields)
-    if len(set(cuda_signatures.values())) != 1:
-        raise PipelineError("Baseline and safetensors benchmarks use different CUDA runtimes")
+    runtime_signatures = {
+        variant: _in_process_runtime_signature(results[variant], variant)
+        for variant in ("baseline", "finetuned_safetensors")
+    }
+    if len(set(runtime_signatures.values())) != 1:
+        raise PipelineError("Baseline and safetensors benchmarks use different accelerator runtimes")
     if config.get("generation") and any(
         result.get("generation") != config["generation"] for result in results.values()
     ):
@@ -497,16 +510,21 @@ def run_report(
     chart = root / str(config["outputs"]["loss_chart"])
     chart_created = False
     training_summary: Mapping[str, Any] | None = None
-    training_result = root / "artifacts" / "metrics" / "training_result.json"
+    training_result = root / str(
+        config.get("inputs", {}).get(
+            "training_result", "artifacts/metrics/training_result.json"
+        )
+    )
     if training_result.is_file():
         state = json.loads(training_result.read_text(encoding="utf-8"))
         training_summary = state
         chart_created = render_loss_svg(state.get("log_history", []), chart)
     elif not allow_provisional:
-        raise PipelineError("Final report requires artifacts/metrics/training_result.json")
+        raise PipelineError(f"Final report requires training result: {training_result}")
     if not chart_created:
+        checkpoints = training_result.parent.parent / "checkpoints"
         trainer_states = sorted(
-            (root / "artifacts" / "checkpoints").glob("**/trainer_state.json"),
+            checkpoints.glob("**/trainer_state.json"),
             key=lambda path: path.stat().st_mtime,
         )
         if trainer_states:

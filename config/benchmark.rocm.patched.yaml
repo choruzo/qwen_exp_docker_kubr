@@ -4,6 +4,7 @@ seed: 3407
 inputs:
   test: data/processed/test.jsonl
   split_statistics: data/processed/split_statistics.json
+  training_result: artifacts/rocm/hipblaslt_patched/metrics/training_result.json
   test_manifest: benchmarks/test_manifest.jsonl
   judge_manifest: benchmarks/llm_judge_manifest.jsonl
   out_of_domain: benchmarks/fixtures/out_of_domain.jsonl

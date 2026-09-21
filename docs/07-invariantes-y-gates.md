@@ -93,10 +93,10 @@ Antes de comparar variantes exige:
 2. cobertura exacta de registros frente al manifiesto congelado;
 3. procedencia de los exports idéntica al manifiesto actual;
 4. mismo `split_test_sha256` en todas las variantes;
-5. misma firma CUDA entre `baseline` y `finetuned_safetensors`;
+5. misma firma de acelerador (CUDA o ROCm) entre `baseline` y `finetuned_safetensors`;
 6. mismos parámetros de generación, similitud, sintaxis y juez;
 7. identidad fija del juez servido (alias, filename, cuantización, prompt, manifiesto);
-8. `artifacts/metrics/training_result.json` con VRAM y filtro de longitud persistidos.
+8. `training_result.json` configurado para el perfil (por defecto `artifacts/metrics/training_result.json`) con VRAM y filtro de longitud persistidos.
 
 ## 6. Invariantes de datos
 

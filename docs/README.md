@@ -21,6 +21,7 @@ internos y el estado real de avance.
 | [06-estado-actual.md](06-estado-actual.md) | **Qué está hecho y qué falta**, con evidencia |
 | [07-invariantes-y-gates.md](07-invariantes-y-gates.md) | Todos los gates de corrección y qué rompe cada uno |
 | [08-decisiones-e-historial.md](08-decisiones-e-historial.md) | Decisiones de diseño y su motivo empírico, historial de commits |
+| [09-evaluacion-rocm-patched.md](09-evaluacion-rocm-patched.md) | Estado de la exportación y evaluación ROCm parcheada (21-09-2026) |
 
 ## Regla central del proyecto
 
@@ -30,6 +31,7 @@ internos y el estado real de avance.
 
 ## Atajo: estado en una línea
 
-Datos y baseline **listos y verificados como finales**; el entrenamiento completo
-**nunca ha terminado** (mejor intento: ~3 % de 10 491 updates). Detalle en
-[06-estado-actual.md](06-estado-actual.md).
+El entrenamiento ROCm parcheado terminó y sus exports se verificaron; el benchmark
+ROCm sobre test sigue en curso y aún no hay comparación final ni juicio LLM.
+Estado reciente en [09-evaluacion-rocm-patched.md](09-evaluacion-rocm-patched.md);
+el [06-estado-actual.md](06-estado-actual.md) conserva el estado histórico anterior.

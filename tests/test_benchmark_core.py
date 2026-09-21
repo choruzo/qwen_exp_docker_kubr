@@ -46,6 +46,7 @@ def _result(value: float) -> dict:
         "runtime": {
             "backend": "unsloth",
             "device": "NVIDIA GeForce RTX 5060 Ti",
+            "accelerator": "cuda",
             "compute_capability": "12.0",
             "torch_version": "2.10.0+cu128",
             "torch_cuda_version": "12.8",
@@ -426,7 +427,7 @@ def test_final_report_uses_persisted_complete_loss_history(monkeypatch, tmp_path
     fine_result = json.loads(fine_path.read_text(encoding="utf-8"))
     fine_result["runtime"]["device"] = "different GPU"
     fine_path.write_text(json.dumps(fine_result), encoding="utf-8")
-    with pytest.raises(PipelineError, match="different CUDA runtimes"):
+    with pytest.raises(PipelineError, match="different accelerator runtimes"):
         benchmark_report.run_report(root=tmp_path)
     fine_result["runtime"]["device"] = "NVIDIA GeForce RTX 5060 Ti"
     fine_path.write_text(json.dumps(fine_result), encoding="utf-8")
@@ -1286,3 +1287,28 @@ def test_hip_runtime_metadata_records_gfx_architecture() -> None:
     assert runtime["gcn_arch"] == "gfx1201"
     assert runtime["torch_hip_version"] == "7.2.53211"
     assert "compute_capability" not in runtime
+
+
+def test_report_runtime_signature_supports_rocm() -> None:
+    result = {
+        "runtime": {
+            "backend": "unsloth",
+            "device": "AMD Radeon Graphics",
+            "torch_version": "2.12.1+rocm7.2",
+            "accelerator": "rocm",
+            "gcn_arch": "gfx1201",
+            "torch_hip_version": "7.2.53211",
+        }
+    }
+
+    signature = benchmark_report._in_process_runtime_signature(result, "baseline")
+
+    assert "rocm" in signature
+
+
+def test_report_runtime_signature_supports_legacy_cuda() -> None:
+    result = _result(0.8)
+    del result["runtime"]["accelerator"]
+    signature = benchmark_report._in_process_runtime_signature(result, "baseline")
+    assert "cuda" in signature
+    assert "12.0" in signature
