@@ -14,7 +14,15 @@ log() { printf '%s %s\n' "$(date --iso-8601=seconds)" "$*" | tee -a "$state_dir/
 name_for() { printf 'qwen35-rocm-benchmark-%s' "${1//_/-}"; }
 container_state() { docker inspect -f '{{.State.Status}}' "$1" 2>/dev/null || true; }
 result_for() { printf '%s/benchmarks/rocm/hipblaslt_patched/%s_results.json' "$project_dir" "$1"; }
-complete_result() { jq -e '.completion.full_test == true and .completion.generation == true' "$1" >/dev/null 2>&1; }
+complete_result() {
+  local result="$1"
+  if [[ -f "$result" && ! -r "$result" ]]; then
+    # Docker writes private JSON as root; change only its owner, preserving mode 0600.
+    docker run --rm --network none -v "$result:/result.json" --entrypoint /bin/chown \
+      docker-k8s-finetune-train:rocm-e0fd6548 "$(id -u):$(id -g)" /result.json >/dev/null
+  fi
+  jq -e '.completion.full_test == true and .completion.generation == true' "$result" >/dev/null 2>&1
+}
 archive_logs() {
   local id
   id="$(docker inspect -f '{{.Id}}' "$1" 2>/dev/null || true)"

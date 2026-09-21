@@ -12,22 +12,18 @@ La evaluación congelada usa `config/benchmark.rocm.patched.yaml`. El split de t
 
 ## Evaluación en curso
 
-El primer intento de generar las respuestas del baseline terminó antes de completar el test. El 21-09-2026 se reanudó en un contenedor independiente de la sesión, `qwen35-rocm-benchmark-baseline`, reutilizando su caché determinista. Se ejecuta con `--skip-judge --skip-syntax` para separar la inferencia principal de las fases posteriores. Su progreso puede consultarse con:
+El baseline ROCm completó la generación de 3.161 casos (test congelado más 50 fuera de dominio), sin errores y con 18 respuestas truncadas: 0,57 %, por debajo del gate del 1 %. La similitud semántica media provisional es 0,6543. El JSON sigue siendo provisional porque aún faltan sintaxis y juez.
 
-```sh
-docker logs --tail 20 qwen35-rocm-benchmark-baseline
-docker ps --filter name=qwen35-rocm-benchmark-baseline
-```
+Al terminar la generación, la puntuación semántica falló por 11 archivos vacíos en la snapshot local de `sentence-transformers/paraphrase-multilingual-mpnet-base-v2`. Los blobs originales estaban íntegros; se reconstruyeron los enlaces y `hf cache verify` pasó para los 11 archivos presentes. El cierre se repitió desde las 3.161 predicciones en caché, sin regenerarlas.
 
-El juez todavía no ha producido métricas: necesita que existan las respuestas del baseline. Tampoco hay aún una comparación válida baseline/ajustado sobre el test ni análisis de regresiones, categorías o calidad; por tanto, no se puede decidir todavía si la cuantización GGUF supera los gates. Un benchmark CUDA anterior no sustituye al baseline ROCm congelado.
+La variante `finetuned_safetensors` comenzó a las 16:49, hora de Madrid, el 21-09-2026. El juez todavía no ha producido métricas; no existe aún una comparación válida baseline/ajustado ni análisis de regresiones o categorías. Un benchmark CUDA anterior no sustituye al baseline ROCm congelado.
 
 ## Secuencia pendiente
 
-1. Terminar baseline ROCm y generar el resultado local.
-2. Ejecutar la variante `finetuned_safetensors` con la misma configuración y el mismo test.
-3. Ejecutar validación sintáctica y juez con la identidad congelada para ambas variantes.
-4. Generar el informe comparativo y analizar resultados por categoría y regresiones.
-5. Solo si los gates de calidad se cumplen, ejecutar inferencia real de `finetuned_gguf`, validar sintaxis y pasar el mismo juez.
+1. Terminar `finetuned_safetensors` con la misma configuración y el mismo test.
+2. Ejecutar validación sintáctica y juez con la identidad congelada para ambas variantes.
+3. Generar el informe comparativo y analizar resultados por categoría y regresiones.
+4. Solo si los gates de calidad se cumplen, ejecutar inferencia real de `finetuned_gguf`, validar sintaxis y pasar el mismo juez.
 
 ## Horario automático de inferencia
 
@@ -37,3 +33,5 @@ Los timers `qwen35-rocm-benchmark-start.timer` y `qwen35-rocm-benchmark-stop.tim
 systemctl --user list-timers --all | rg 'qwen35-rocm-benchmark'
 bash scripts/schedule_rocm_benchmark.sh status
 ```
+
+Los pesos, predicciones individuales, cachés y datos permanecen locales. En Git solo se publican código y documentos de resultados.
