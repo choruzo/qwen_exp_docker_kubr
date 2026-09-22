@@ -267,7 +267,7 @@ def test_training_config_accepts_eval_loss_best_model_restoration() -> None:
     config = _config()
     config["trainer"].update({
         "eval_strategy": "steps",
-        "save_steps": 25,
+        "save_steps": 500,
         "load_best_model_at_end": True,
         "metric_for_best_model": "eval_loss",
         "greater_is_better": False,
@@ -280,7 +280,7 @@ def test_training_config_accepts_eval_loss_best_model_restoration() -> None:
     [
         ("metric_for_best_model", "loss", "select eval_loss"),
         ("greater_is_better", True, "greater_is_better=false"),
-        ("save_steps", 300, "multiple of save_steps"),
+        ("save_steps", 300, "multiple of eval_steps"),
     ],
 )
 def test_training_config_rejects_invalid_best_model_contract(
@@ -289,7 +289,7 @@ def test_training_config_rejects_invalid_best_model_contract(
     config = _config()
     config["trainer"].update({
         "eval_strategy": "steps",
-        "save_steps": 25,
+        "save_steps": 500,
         "load_best_model_at_end": True,
         "metric_for_best_model": "eval_loss",
         "greater_is_better": False,
