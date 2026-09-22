@@ -1,0 +1,31 @@
+# Diagnostic only: never replaces config/benchmark.rocm.patched.yaml.
+version: 1
+frozen_benchmark_config: config/benchmark.rocm.patched.yaml
+frozen_benchmark_sha256: fb5ca861612637f4b370e1430e990ec06d3679e6fe04a51acd34654d8aa8e98a
+validation: data/processed/val.jsonl
+validation_sha256: bcf223584546fe573830470fcffedcffe92817034078808934bc892f6cbf90ac
+test_manifest: benchmarks/test_manifest.jsonl
+out_of_domain: benchmarks/fixtures/out_of_domain.jsonl
+sample_per_category: 2
+selection: reference_length_median_and_p90_by_category_v1
+outputs_dir: benchmarks/rocm/hipblaslt_patched/validation_probe_v1
+variants:
+  adapter:
+    backend: unsloth
+    model_path: artifacts/rocm/hipblaslt_patched/adapter
+    export_manifest: artifacts/rocm/hipblaslt_patched/export_manifest.json
+    artifact: adapter
+    load_in_4bit: false
+  merged:
+    backend: unsloth
+    model_path: artifacts/rocm/hipblaslt_patched/merged
+    export_manifest: artifacts/rocm/hipblaslt_patched/export_manifest.json
+    artifact: merged
+    load_in_4bit: false
+policies:
+  frozen:
+    repetition_penalty: 1.0
+    retry_repetition_penalty: 1.1
+  repetition_control_v1:
+    repetition_penalty: 1.1
+    retry_repetition_penalty: 1.2

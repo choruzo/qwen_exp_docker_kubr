@@ -24,6 +24,7 @@ internos y el estado real de avance.
 | [09-evaluacion-rocm-patched.md](09-evaluacion-rocm-patched.md) | Estado de la exportación y evaluación ROCm parcheada (21-09-2026) |
 | [10-diagnostico-benchmark-rocm-2026-09-22.md](10-diagnostico-benchmark-rocm-2026-09-22.md) | Comparación provisional, regresiones y gate fallido del modelo ajustado |
 | [11-diagnostico-pareado-rocm-v1.md](11-diagnostico-pareado-rocm-v1.md) | Diagnóstico pareado reproducible y protocolo del siguiente experimento en validación |
+| [12-ensayo-validacion-rocm-v1.md](12-ensayo-validacion-rocm-v1.md) | Comparación adaptador/fusionado, política alternativa y revisión del entrenamiento |
 
 ## Regla central del proyecto
 
