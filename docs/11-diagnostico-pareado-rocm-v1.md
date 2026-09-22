@@ -20,6 +20,8 @@ Fuera de dominio (50 casos), la coincidencia exacta cae de 21 a 3, la similitud 
 
 El archivo `tokenizer.json` base y exportado tiene el mismo SHA-256, y las propiedades `chat_template`, `eos_token` y `added_tokens_decoder` de `tokenizer_config.json` son iguales. Hay otros cambios de metadatos introducidos al exportar; no basta para declarar que el tokenizer sea la causa ni para descartarlo de modo absoluto.
 
+La pérdida de validación registrada alcanzó su mínimo, 1,2606, en el paso 7.000 y acabó en 1,3012 en el paso 10.491. Es una señal compatible con degradación al final del ajuste, no una prueba causal. Sólo se conservan los checkpoints 10.450, 10.475 y 10.491; el de 7.000 no está disponible para una comparación directa.
+
 ## Experimento siguiente, separado del benchmark congelado
 
 1. Tomar una muestra fija y versionada **sólo de validación** con respuestas largas y cortas, seleccionada por hashes; no usar el test ni las 50 pruebas fuera de dominio para elegir parámetros.
