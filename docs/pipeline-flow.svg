@@ -1,0 +1,337 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="1290" viewBox="0 0 1480 1290">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#64748b"/></marker></defs>
+<rect width="1480" height="1290" fill="#f8fafc"/>
+<text x="25" y="46" font-family="system-ui,Segoe UI,sans-serif" font-size="26" font-weight="800" fill="#0f172a" text-anchor="start">docker_k8s_finetune — flujo completo del pipeline</text>
+<text x="25" y="76" font-family="system-ui,Segoe UI,sans-serif" font-size="13.5" font-weight="400" fill="#475569" text-anchor="start">Ingesta → limpieza → normalización → deduplicación → validación → split + datasheet → baseline → entrenamiento QLoRA → validación → exportación → benchmark (sintaxis + juez) → informe</text>
+<rect x="15" y="100" width="1450" height="322" rx="16" fill="#eff6ff" opacity="0.55"/>
+<text x="1451" y="124" font-family="system-ui,Segoe UI,sans-serif" font-size="14" font-weight="800" fill="#2563eb" text-anchor="end">FASE 1 · DATOS</text>
+<rect x="15" y="470" width="1450" height="322" rx="16" fill="#f5f3ff" opacity="0.55"/>
+<text x="1451" y="494" font-family="system-ui,Segoe UI,sans-serif" font-size="14" font-weight="800" fill="#7c3aed" text-anchor="end">FASE 2 · BASELINE, ENTRENAMIENTO Y VALIDACIÓN</text>
+<rect x="15" y="840" width="1450" height="322" rx="16" fill="#ecfdf5" opacity="0.55"/>
+<text x="1451" y="864" font-family="system-ui,Segoe UI,sans-serif" font-size="14" font-weight="800" fill="#059669" text-anchor="end">FASE 3 · EVALUACIÓN E INFORME</text>
+<rect x="25" y="150" width="210" height="262" rx="12" fill="#ffffff" stroke="#2563eb" stroke-width="1.6"/>
+<path d="M25 162 a12 12 0 0 1 12 -12 h186 a12 12 0 0 1 12 12 v30 h-210 z" fill="#dbeafe"/>
+<circle cx="47" cy="171" r="12" fill="#2563eb"/>
+<text x="47" y="175.5" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+<text x="67" y="176" font-family="system-ui,Segoe UI,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Ingesta</text>
+<text x="39" y="212" font-family="ui-monospace,Consolas,monospace" font-size="11" font-weight="500" fill="#2563eb" text-anchor="start">dkft extract</text>
+<circle cx="43" cy="232" r="2.2" fill="#2563eb"/>
+<text x="51" y="236" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">9 × docs oficiales (git)</text>
+<circle cx="43" cy="251" r="2.2" fill="#2563eb"/>
+<text x="51" y="255" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">6 × datasets de Hugging Face</text>
+<circle cx="43" cy="270" r="2.2" fill="#2563eb"/>
+<text x="51" y="274" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Stack Overflow · BigQuery</text>
+<text x="51" y="293" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">(≤70 GiB) + dump SE</text>
+<circle cx="43" cy="308" r="2.2" fill="#2563eb"/>
+<text x="51" y="312" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">GitHub issues (GITHUB_TOKEN)</text>
+<circle cx="43" cy="327" r="2.2" fill="#2563eb"/>
+<text x="51" y="331" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Licencia unknown → cuarentena</text>
+<rect x="35" y="342" width="190" height="24" rx="6" fill="#fffbeb" stroke="#d97706"/>
+<text x="43" y="358" font-family="system-ui,Segoe UI,sans-serif" font-size="11" font-weight="600" fill="#92400e" text-anchor="start">GATE · sources.yaml aprobado</text>
+<rect x="35" y="374" width="190" height="26" rx="6" fill="#eff6ff"/>
+<text x="43" y="391" font-family="ui-monospace,Consolas,monospace" font-size="10.5" font-weight="500" fill="#1e293b" text-anchor="start">interim/extracted/</text>
+<rect x="269" y="150" width="210" height="262" rx="12" fill="#ffffff" stroke="#2563eb" stroke-width="1.6"/>
+<path d="M269 162 a12 12 0 0 1 12 -12 h186 a12 12 0 0 1 12 12 v30 h-210 z" fill="#dbeafe"/>
+<circle cx="291" cy="171" r="12" fill="#2563eb"/>
+<text x="291" y="175.5" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+<text x="311" y="176" font-family="system-ui,Segoe UI,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Limpieza</text>
+<text x="283" y="212" font-family="ui-monospace,Consolas,monospace" font-size="11" font-weight="500" fill="#2563eb" text-anchor="start">dkft clean</text>
+<circle cx="287" cy="232" r="2.2" fill="#2563eb"/>
+<text x="295" y="236" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">HTML → texto · repara fences</text>
+<circle cx="287" cy="251" r="2.2" fill="#2563eb"/>
+<text x="295" y="255" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Longitud 40 – 50 000 chars</text>
+<circle cx="287" cy="270" r="2.2" fill="#2563eb"/>
+<text x="295" y="274" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Idioma en/es (p ≥ 0.80)</text>
+<circle cx="287" cy="289" r="2.2" fill="#2563eb"/>
+<text x="295" y="293" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">6 regex PII: email, IP, AWS,</text>
+<text x="295" y="312" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">GitHub token, JWT, bearer</text>
+<circle cx="287" cy="327" r="2.2" fill="#2563eb"/>
+<text x="295" y="331" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Muestra de revisión de PII</text>
+<rect x="279" y="374" width="190" height="26" rx="6" fill="#eff6ff"/>
+<text x="287" y="391" font-family="ui-monospace,Consolas,monospace" font-size="10.5" font-weight="500" fill="#1e293b" text-anchor="start">cleaned/records.jsonl</text>
+<rect x="513" y="150" width="210" height="262" rx="12" fill="#ffffff" stroke="#2563eb" stroke-width="1.6"/>
+<path d="M513 162 a12 12 0 0 1 12 -12 h186 a12 12 0 0 1 12 12 v30 h-210 z" fill="#dbeafe"/>
+<circle cx="535" cy="171" r="12" fill="#2563eb"/>
+<text x="535" y="175.5" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+<text x="555" y="176" font-family="system-ui,Segoe UI,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Normalización</text>
+<text x="527" y="212" font-family="ui-monospace,Consolas,monospace" font-size="11" font-weight="500" fill="#2563eb" text-anchor="start">normalize(-generate)</text>
+<circle cx="531" cy="232" r="2.2" fill="#2563eb"/>
+<text x="539" y="236" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Pares directos → ChatML</text>
+<circle cx="531" cy="251" r="2.2" fill="#2563eb"/>
+<text x="539" y="255" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Instrucción inversa con LLM</text>
+<text x="539" y="274" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Qwen3-14B Q5_K_M</text>
+<circle cx="531" cy="289" r="2.2" fill="#2563eb"/>
+<text x="539" y="293" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">sample (100) → revisión manual</text>
+<text x="539" y="312" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">95 aceptadas / 5 cuarentena</text>
+<rect x="523" y="342" width="190" height="24" rx="6" fill="#fffbeb" stroke="#d97706"/>
+<text x="531" y="358" font-family="system-ui,Segoe UI,sans-serif" font-size="11" font-weight="600" fill="#92400e" text-anchor="start">GATE · SHA-256 muestra aprobado</text>
+<rect x="523" y="374" width="190" height="26" rx="6" fill="#eff6ff"/>
+<text x="531" y="391" font-family="ui-monospace,Consolas,monospace" font-size="10.5" font-weight="500" fill="#1e293b" text-anchor="start">direct + reverse_full</text>
+<rect x="757" y="150" width="210" height="262" rx="12" fill="#ffffff" stroke="#2563eb" stroke-width="1.6"/>
+<path d="M757 162 a12 12 0 0 1 12 -12 h186 a12 12 0 0 1 12 12 v30 h-210 z" fill="#dbeafe"/>
+<circle cx="779" cy="171" r="12" fill="#2563eb"/>
+<text x="779" y="175.5" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+<text x="799" y="176" font-family="system-ui,Segoe UI,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Deduplicación</text>
+<text x="771" y="212" font-family="ui-monospace,Consolas,monospace" font-size="11" font-weight="500" fill="#2563eb" text-anchor="start">dedupe exact → approximate</text>
+<circle cx="775" cy="232" r="2.2" fill="#2563eb"/>
+<text x="783" y="236" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Exacto: SHA-256 (NFKC)</text>
+<circle cx="775" cy="251" r="2.2" fill="#2563eb"/>
+<text x="783" y="255" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Semántico: multilingual-mpnet</text>
+<circle cx="775" cy="270" r="2.2" fill="#2563eb"/>
+<text x="783" y="274" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Coseno ≥ 0.92 · FAISS HNSW</text>
+<circle cx="775" cy="289" r="2.2" fill="#2563eb"/>
+<text x="783" y="293" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Clusters → 1 representante</text>
+<text x="783" y="312" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">(calidad → tier → hash)</text>
+<circle cx="775" cy="327" r="2.2" fill="#2563eb"/>
+<text x="783" y="331" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Aprox. sólo dentro de Docker</text>
+<rect x="767" y="374" width="190" height="26" rx="6" fill="#eff6ff"/>
+<text x="775" y="391" font-family="ui-monospace,Consolas,monospace" font-size="10.5" font-weight="500" fill="#1e293b" text-anchor="start">deduplicated/chatml.jsonl</text>
+<rect x="1001" y="150" width="210" height="262" rx="12" fill="#ffffff" stroke="#2563eb" stroke-width="1.6"/>
+<path d="M1001 162 a12 12 0 0 1 12 -12 h186 a12 12 0 0 1 12 12 v30 h-210 z" fill="#dbeafe"/>
+<circle cx="1023" cy="171" r="12" fill="#2563eb"/>
+<text x="1023" y="175.5" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">5</text>
+<text x="1043" y="176" font-family="system-ui,Segoe UI,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Validación</text>
+<text x="1015" y="212" font-family="ui-monospace,Consolas,monospace" font-size="11" font-weight="500" fill="#2563eb" text-anchor="start">dkft validate-dataset</text>
+<circle cx="1019" cy="232" r="2.2" fill="#2563eb"/>
+<text x="1027" y="236" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Extrae bloques YAML/Dockerfile</text>
+<circle cx="1019" cy="251" r="2.2" fill="#2563eb"/>
+<text x="1027" y="255" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">kubeconform v0.7.0 (strict,</text>
+<text x="1027" y="274" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">K8s 1.36) vía docker run</text>
+<circle cx="1019" cy="289" r="2.2" fill="#2563eb"/>
+<text x="1027" y="293" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">hadolint v2.15.1 (≥ error)</text>
+<circle cx="1019" cy="308" r="2.2" fill="#2563eb"/>
+<text x="1027" y="312" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Imágenes fijadas por digest</text>
+<circle cx="1019" cy="327" r="2.2" fill="#2563eb"/>
+<text x="1027" y="331" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Reclasifica categorías</text>
+<rect x="1011" y="374" width="190" height="26" rx="6" fill="#eff6ff"/>
+<text x="1019" y="391" font-family="ui-monospace,Consolas,monospace" font-size="10.5" font-weight="500" fill="#1e293b" text-anchor="start">validated/chatml.jsonl</text>
+<rect x="1245" y="150" width="210" height="262" rx="12" fill="#ffffff" stroke="#2563eb" stroke-width="1.6"/>
+<path d="M1245 162 a12 12 0 0 1 12 -12 h186 a12 12 0 0 1 12 12 v30 h-210 z" fill="#dbeafe"/>
+<circle cx="1267" cy="171" r="12" fill="#2563eb"/>
+<text x="1267" y="175.5" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">6</text>
+<text x="1287" y="176" font-family="system-ui,Segoe UI,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Split + Datasheet</text>
+<text x="1259" y="212" font-family="ui-monospace,Consolas,monospace" font-size="11" font-weight="500" fill="#2563eb" text-anchor="start">dkft split</text>
+<circle cx="1263" cy="232" r="2.2" fill="#2563eb"/>
+<text x="1271" y="236" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">90/5/5 por categoría+fuente</text>
+<circle cx="1263" cy="251" r="2.2" fill="#2563eb"/>
+<text x="1271" y="255" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Grupos = cluster semántico</text>
+<circle cx="1263" cy="270" r="2.2" fill="#2563eb"/>
+<text x="1271" y="274" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Auditoría de fugas (0.92): 0</text>
+<circle cx="1263" cy="289" r="2.2" fill="#2563eb"/>
+<text x="1271" y="293" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Subset hard: troubleshooting</text>
+<circle cx="1263" cy="308" r="2.2" fill="#2563eb"/>
+<text x="1271" y="312" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">55 999 / 3 111 / 3 111</text>
+<circle cx="1263" cy="327" r="2.2" fill="#2563eb"/>
+<text x="1271" y="331" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">DATASHEET.md + manifiestos</text>
+<rect x="1255" y="374" width="190" height="26" rx="6" fill="#eff6ff"/>
+<text x="1263" y="391" font-family="ui-monospace,Consolas,monospace" font-size="10.5" font-weight="500" fill="#1e293b" text-anchor="start">data/processed/*.jsonl</text>
+<line x1="238" y1="281.0" x2="264" y2="281.0" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="482" y1="281.0" x2="508" y2="281.0" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="726" y1="281.0" x2="752" y2="281.0" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="970" y1="281.0" x2="996" y2="281.0" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="1214" y1="281.0" x2="1240" y2="281.0" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+<path d="M1350.0 415 V463.0 H130.0 V515" fill="none" stroke="#64748b" stroke-width="2" stroke-linejoin="round" marker-end="url(#ah)"/>
+<rect x="645.0" y="450.0" width="190" height="24" rx="12" fill="#f8fafc" stroke="#cbd5e1"/>
+<text x="740.0" y="466.5" font-family="system-ui,Segoe UI,sans-serif" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">splits congelados (LFS)</text>
+<rect x="25" y="520" width="210" height="262" rx="12" fill="#ffffff" stroke="#7c3aed" stroke-width="1.6"/>
+<path d="M25 532 a12 12 0 0 1 12 -12 h186 a12 12 0 0 1 12 12 v30 h-210 z" fill="#ede9fe"/>
+<circle cx="47" cy="541" r="12" fill="#7c3aed"/>
+<text x="47" y="545.5" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">7</text>
+<text x="67" y="546" font-family="system-ui,Segoe UI,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Benchmark baseline</text>
+<text x="39" y="582" font-family="ui-monospace,Consolas,monospace" font-size="11" font-weight="500" fill="#7c3aed" text-anchor="start">benchmark --variant baseline</text>
+<circle cx="43" cy="602" r="2.2" fill="#7c3aed"/>
+<text x="51" y="606" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Qwen3.5-4B base (sin 4-bit)</text>
+<circle cx="43" cy="621" r="2.2" fill="#7c3aed"/>
+<text x="51" y="625" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Test congelado: 3 111 registros</text>
+<circle cx="43" cy="640" r="2.2" fill="#7c3aed"/>
+<text x="51" y="644" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">+ sintaxis + juez LLM</text>
+<circle cx="43" cy="659" r="2.2" fill="#7c3aed"/>
+<text x="51" y="663" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">max_new_tokens 2048</text>
+<circle cx="43" cy="678" r="2.2" fill="#7c3aed"/>
+<text x="51" y="682" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">temp 0 · seed 3407</text>
+<circle cx="43" cy="697" r="2.2" fill="#7c3aed"/>
+<text x="51" y="701" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Caché por registro</text>
+<rect x="35" y="712" width="190" height="24" rx="6" fill="#fffbeb" stroke="#d97706"/>
+<text x="43" y="728" font-family="system-ui,Segoe UI,sans-serif" font-size="11" font-weight="600" fill="#92400e" text-anchor="start">GATE · baseline final</text>
+<rect x="35" y="744" width="190" height="26" rx="6" fill="#f5f3ff"/>
+<text x="43" y="761" font-family="ui-monospace,Consolas,monospace" font-size="10.5" font-weight="500" fill="#1e293b" text-anchor="start">baseline_results.json</text>
+<rect x="269" y="520" width="210" height="262" rx="12" fill="#ffffff" stroke="#7c3aed" stroke-width="1.6"/>
+<path d="M269 532 a12 12 0 0 1 12 -12 h186 a12 12 0 0 1 12 12 v30 h-210 z" fill="#ede9fe"/>
+<circle cx="291" cy="541" r="12" fill="#7c3aed"/>
+<text x="291" y="545.5" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">8</text>
+<text x="311" y="546" font-family="system-ui,Segoe UI,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Entrenamiento</text>
+<text x="283" y="582" font-family="ui-monospace,Consolas,monospace" font-size="11" font-weight="500" fill="#7c3aed" text-anchor="start">dkft train</text>
+<circle cx="287" cy="602" r="2.2" fill="#7c3aed"/>
+<text x="295" y="606" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">QLoRA 4-bit · sólo texto</text>
+<circle cx="287" cy="621" r="2.2" fill="#7c3aed"/>
+<text x="295" y="625" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">LoRA r=32 α=32 · lr 2e-4</text>
+<circle cx="287" cy="640" r="2.2" fill="#7c3aed"/>
+<text x="295" y="644" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">adamw_8bit · cosine · 3 épocas</text>
+<circle cx="287" cy="659" r="2.2" fill="#7c3aed"/>
+<text x="295" y="663" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">ctx 8192 · batch 1 × acc 16</text>
+<circle cx="287" cy="678" r="2.2" fill="#7c3aed"/>
+<text x="295" y="682" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">&gt;8192 tokens: excluidos</text>
+<circle cx="287" cy="697" r="2.2" fill="#7c3aed"/>
+<text x="295" y="701" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">OOM: 8192 → 4096 → 2048</text>
+<rect x="279" y="712" width="190" height="24" rx="6" fill="#fffbeb" stroke="#d97706"/>
+<text x="287" y="728" font-family="system-ui,Segoe UI,sans-serif" font-size="11" font-weight="600" fill="#92400e" text-anchor="start">GATE · SHA-256 modelo + baseline</text>
+<rect x="279" y="744" width="190" height="26" rx="6" fill="#f5f3ff"/>
+<text x="287" y="761" font-family="ui-monospace,Consolas,monospace" font-size="10.5" font-weight="500" fill="#1e293b" text-anchor="start">Unsloth + TRL (SFT)</text>
+<rect x="513" y="520" width="210" height="262" rx="12" fill="#ffffff" stroke="#7c3aed" stroke-width="1.6"/>
+<path d="M513 532 a12 12 0 0 1 12 -12 h186 a12 12 0 0 1 12 12 v30 h-210 z" fill="#ede9fe"/>
+<circle cx="535" cy="541" r="12" fill="#7c3aed"/>
+<text x="535" y="545.5" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">9</text>
+<text x="555" y="546" font-family="system-ui,Segoe UI,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Validación</text>
+<text x="527" y="582" font-family="ui-monospace,Consolas,monospace" font-size="11" font-weight="500" fill="#7c3aed" text-anchor="start">val.jsonl · 3 111 registros</text>
+<circle cx="531" cy="602" r="2.2" fill="#7c3aed"/>
+<text x="539" y="606" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">eval_loss cada 500 steps</text>
+<text x="539" y="625" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">+ evaluación final</text>
+<circle cx="531" cy="640" r="2.2" fill="#7c3aed"/>
+<text x="539" y="644" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Sin early stopping</text>
+<circle cx="531" cy="659" r="2.2" fill="#7c3aed"/>
+<text x="539" y="663" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Checkpoint cada 25 updates</text>
+<text x="539" y="682" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">(se conservan los 3 últimos)</text>
+<circle cx="531" cy="697" r="2.2" fill="#7c3aed"/>
+<text x="539" y="701" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Resume por fingerprint</text>
+<rect x="523" y="744" width="190" height="26" rx="6" fill="#f5f3ff"/>
+<text x="531" y="761" font-family="ui-monospace,Consolas,monospace" font-size="10.5" font-weight="500" fill="#1e293b" text-anchor="start">training_result.json</text>
+<rect x="757" y="520" width="210" height="262" rx="12" fill="#ffffff" stroke="#7c3aed" stroke-width="1.6"/>
+<path d="M757 532 a12 12 0 0 1 12 -12 h186 a12 12 0 0 1 12 12 v30 h-210 z" fill="#ede9fe"/>
+<circle cx="779" cy="541" r="12" fill="#7c3aed"/>
+<text x="779" y="545.5" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">10</text>
+<text x="799" y="546" font-family="system-ui,Segoe UI,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Exportación</text>
+<text x="771" y="582" font-family="ui-monospace,Consolas,monospace" font-size="11" font-weight="500" fill="#7c3aed" text-anchor="start">artifacts/</text>
+<circle cx="775" cy="602" r="2.2" fill="#7c3aed"/>
+<text x="783" y="606" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">adapter/ (LoRA)</text>
+<circle cx="775" cy="621" r="2.2" fill="#7c3aed"/>
+<text x="783" y="625" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">merged/ (safetensors)</text>
+<circle cx="775" cy="640" r="2.2" fill="#7c3aed"/>
+<text x="783" y="644" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">gguf/ q4_k_m + q8_0</text>
+<circle cx="775" cy="659" r="2.2" fill="#7c3aed"/>
+<text x="783" y="663" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">SHA-256 de cada archivo</text>
+<circle cx="775" cy="678" r="2.2" fill="#7c3aed"/>
+<text x="783" y="682" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Linaje train/val/test</text>
+<rect x="767" y="744" width="190" height="26" rx="6" fill="#f5f3ff"/>
+<text x="775" y="761" font-family="ui-monospace,Consolas,monospace" font-size="10.5" font-weight="500" fill="#1e293b" text-anchor="start">export_manifest.json</text>
+<rect x="1001" y="520" width="454" height="262" rx="12" fill="#ffffff" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="7 5"/>
+<path d="M1001 532 a12 12 0 0 1 12 -12 h430 a12 12 0 0 1 12 12 v30 h-454 z" fill="#ede9fe"/>
+<text x="1015" y="546" font-family="system-ui,Segoe UI,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Perfil alternativo ROCm · Radeon AI PRO R9700</text>
+<text x="1015" y="582" font-family="ui-monospace,Consolas,monospace" font-size="11" font-weight="500" fill="#7c3aed" text-anchor="start">training.rocm.yaml · benchmark.rocm.yaml</text>
+<circle cx="1019" cy="602" r="2.2" fill="#7c3aed"/>
+<text x="1027" y="606" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">LoRA BF16 sin cuantizar · adamw_torch · gfx1201 ≥ 30 GB</text>
+<circle cx="1019" cy="621" r="2.2" fill="#7c3aed"/>
+<text x="1027" y="625" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Resume sólo explícito (--resume-from-latest)</text>
+<circle cx="1019" cy="640" r="2.2" fill="#7c3aed"/>
+<text x="1027" y="644" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Mismos hashes de modelo / train / test que NVIDIA</text>
+<circle cx="1019" cy="659" r="2.2" fill="#7c3aed"/>
+<text x="1027" y="663" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Salidas aisladas: artifacts/rocm · benchmarks/rocm</text>
+<circle cx="1019" cy="678" r="2.2" fill="#7c3aed"/>
+<text x="1027" y="682" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Excepción de redacción en val.jsonl sólo aquí</text>
+<rect x="1011" y="744" width="434" height="26" rx="6" fill="#f5f3ff"/>
+<text x="1019" y="761" font-family="ui-monospace,Consolas,monospace" font-size="10.5" font-weight="500" fill="#1e293b" text-anchor="start">compose.train.rocm.yaml</text>
+<line x1="238" y1="651.0" x2="264" y2="651.0" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="482" y1="651.0" x2="508" y2="651.0" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="726" y1="651.0" x2="752" y2="651.0" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+<path d="M862.0 785 V833.0 H130.0 V885" fill="none" stroke="#64748b" stroke-width="2" stroke-linejoin="round" marker-end="url(#ah)"/>
+<rect x="401.0" y="820.0" width="190" height="24" rx="12" fill="#f8fafc" stroke="#cbd5e1"/>
+<text x="496.0" y="836.5" font-family="system-ui,Segoe UI,sans-serif" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">artefactos exportados</text>
+<rect x="25" y="890" width="210" height="262" rx="12" fill="#ffffff" stroke="#059669" stroke-width="1.6"/>
+<path d="M25 902 a12 12 0 0 1 12 -12 h186 a12 12 0 0 1 12 12 v30 h-210 z" fill="#d1fae5"/>
+<circle cx="47" cy="911" r="12" fill="#059669"/>
+<text x="47" y="915.5" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">11</text>
+<text x="67" y="916" font-family="system-ui,Segoe UI,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Inferencia fine-tuned</text>
+<text x="39" y="952" font-family="ui-monospace,Consolas,monospace" font-size="11" font-weight="500" fill="#059669" text-anchor="start">benchmark --variant …</text>
+<circle cx="43" cy="972" r="2.2" fill="#059669"/>
+<text x="51" y="976" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">safetensors (merged) y GGUF</text>
+<circle cx="43" cy="991" r="2.2" fill="#059669"/>
+<text x="51" y="995" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">GGUF: llama-server verificado</text>
+<text x="51" y="1014" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">/props: ruta, SHA-256, quant</text>
+<circle cx="43" cy="1029" r="2.2" fill="#059669"/>
+<text x="51" y="1033" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Exact match (CLI / OOD)</text>
+<circle cx="43" cy="1048" r="2.2" fill="#059669"/>
+<text x="51" y="1052" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Similitud semántica (mpnet)</text>
+<circle cx="43" cy="1067" r="2.2" fill="#059669"/>
+<text x="51" y="1071" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Truncado ≤ 1 % (1 reintento)</text>
+<rect x="35" y="1114" width="190" height="26" rx="6" fill="#ecfdf5"/>
+<text x="43" y="1131" font-family="ui-monospace,Consolas,monospace" font-size="10.5" font-weight="500" fill="#1e293b" text-anchor="start">predicciones por variante</text>
+<rect x="269" y="890" width="210" height="262" rx="12" fill="#ffffff" stroke="#059669" stroke-width="1.6"/>
+<path d="M269 902 a12 12 0 0 1 12 -12 h186 a12 12 0 0 1 12 12 v30 h-210 z" fill="#d1fae5"/>
+<circle cx="291" cy="911" r="12" fill="#059669"/>
+<text x="291" y="915.5" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">12</text>
+<text x="311" y="916" font-family="system-ui,Segoe UI,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Sintaxis</text>
+<text x="283" y="952" font-family="ui-monospace,Consolas,monospace" font-size="11" font-weight="500" fill="#059669" text-anchor="start">benchmark-syntax</text>
+<circle cx="287" cy="972" r="2.2" fill="#059669"/>
+<text x="295" y="976" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Sólo yaml y dockerfile</text>
+<circle cx="287" cy="991" r="2.2" fill="#059669"/>
+<text x="295" y="995" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">kubeconform · K8s 1.36.2</text>
+<circle cx="287" cy="1010" r="2.2" fill="#059669"/>
+<text x="295" y="1014" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">hadolint · umbral error</text>
+<circle cx="287" cy="1029" r="2.2" fill="#059669"/>
+<text x="295" y="1033" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">docker run, digest fijado</text>
+<circle cx="287" cy="1048" r="2.2" fill="#059669"/>
+<text x="295" y="1052" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Corre en Windows</text>
+<text x="295" y="1071" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">(daemon Docker directo)</text>
+<rect x="279" y="1114" width="190" height="26" rx="6" fill="#ecfdf5"/>
+<text x="287" y="1131" font-family="ui-monospace,Consolas,monospace" font-size="10.5" font-weight="500" fill="#1e293b" text-anchor="start">syntax_valid</text>
+<rect x="513" y="890" width="210" height="262" rx="12" fill="#ffffff" stroke="#059669" stroke-width="1.6"/>
+<path d="M513 902 a12 12 0 0 1 12 -12 h186 a12 12 0 0 1 12 12 v30 h-210 z" fill="#d1fae5"/>
+<circle cx="535" cy="911" r="12" fill="#059669"/>
+<text x="535" y="915.5" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">13</text>
+<text x="555" y="916" font-family="system-ui,Segoe UI,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Juez LLM</text>
+<text x="527" y="952" font-family="ui-monospace,Consolas,monospace" font-size="11" font-weight="500" fill="#059669" text-anchor="start">benchmark-judge</text>
+<circle cx="531" cy="972" r="2.2" fill="#059669"/>
+<text x="539" y="976" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Gemma 4 12B Q6_K_XL</text>
+<circle cx="531" cy="991" r="2.2" fill="#059669"/>
+<text x="539" y="995" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Subset de 150 registros</text>
+<circle cx="531" cy="1010" r="2.2" fill="#059669"/>
+<text x="539" y="1014" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Corrección y completitud 1–5</text>
+<circle cx="531" cy="1029" r="2.2" fill="#059669"/>
+<text x="539" y="1033" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">GPU liberada antes de arrancar</text>
+<circle cx="531" cy="1048" r="2.2" fill="#059669"/>
+<text x="539" y="1052" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Identidad verificada (/props)</text>
+<circle cx="531" cy="1067" r="2.2" fill="#059669"/>
+<text x="539" y="1071" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">temp 0 · seed 3407 · JSON</text>
+<rect x="523" y="1114" width="190" height="26" rx="6" fill="#ecfdf5"/>
+<text x="531" y="1131" font-family="ui-monospace,Consolas,monospace" font-size="10.5" font-weight="500" fill="#1e293b" text-anchor="start">rúbrica: judge_prompt.md</text>
+<rect x="757" y="890" width="210" height="262" rx="12" fill="#ffffff" stroke="#059669" stroke-width="1.6"/>
+<path d="M757 902 a12 12 0 0 1 12 -12 h186 a12 12 0 0 1 12 12 v30 h-210 z" fill="#d1fae5"/>
+<circle cx="779" cy="911" r="12" fill="#059669"/>
+<text x="779" y="915.5" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">14</text>
+<text x="799" y="916" font-family="system-ui,Segoe UI,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Informe</text>
+<text x="771" y="952" font-family="ui-monospace,Consolas,monospace" font-size="11" font-weight="500" fill="#059669" text-anchor="start">dkft report</text>
+<circle cx="775" cy="972" r="2.2" fill="#059669"/>
+<text x="783" y="976" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">baseline vs merged vs GGUF</text>
+<circle cx="775" cy="991" r="2.2" fill="#059669"/>
+<text x="783" y="995" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Mismo test, generación y juez</text>
+<circle cx="775" cy="1010" r="2.2" fill="#059669"/>
+<text x="783" y="1014" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Mismo runtime CUDA / ROCm</text>
+<circle cx="775" cy="1029" r="2.2" fill="#059669"/>
+<text x="783" y="1033" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Exige historial de loss</text>
+<circle cx="775" cy="1048" r="2.2" fill="#059669"/>
+<text x="783" y="1052" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">+ training_loss.svg</text>
+<rect x="767" y="1114" width="190" height="26" rx="6" fill="#ecfdf5"/>
+<text x="775" y="1131" font-family="ui-monospace,Consolas,monospace" font-size="10.5" font-weight="500" fill="#1e293b" text-anchor="start">comparison_report.md</text>
+<rect x="1001" y="890" width="454" height="262" rx="12" fill="#ffffff" stroke="#059669" stroke-width="1.6"/>
+<path d="M1001 902 a12 12 0 0 1 12 -12 h430 a12 12 0 0 1 12 12 v30 h-454 z" fill="#d1fae5"/>
+<text x="1015" y="916" font-family="system-ui,Segoe UI,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Resultado final (no provisional)</text>
+<circle cx="1019" cy="954" r="2.2" fill="#059669"/>
+<text x="1027" y="958" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">provisional = false en cada variante</text>
+<circle cx="1019" cy="973" r="2.2" fill="#059669"/>
+<text x="1027" y="977" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">completion: full_test + generation + syntax + judge</text>
+<circle cx="1019" cy="992" r="2.2" fill="#059669"/>
+<text x="1027" y="996" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Identidad de test / generación / juez coincide</text>
+<circle cx="1019" cy="1011" r="2.2" fill="#059669"/>
+<text x="1027" y="1015" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">Linaje entrenamiento ↔ exportaciones verificado</text>
+<circle cx="1019" cy="1030" r="2.2" fill="#059669"/>
+<text x="1027" y="1034" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">--allow-provisional sólo para diagnóstico</text>
+<circle cx="1019" cy="1049" r="2.2" fill="#059669"/>
+<text x="1027" y="1053" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="400" fill="#334155" text-anchor="start">→ sólo entonces el informe es definitivo</text>
+<line x1="238" y1="1021.0" x2="264" y2="1021.0" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="482" y1="1021.0" x2="508" y2="1021.0" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="726" y1="1021.0" x2="752" y2="1021.0" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="970" y1="1021.0" x2="996" y2="1021.0" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+<rect x="25" y="1200" width="1430" height="66" rx="12" fill="#0f172a"/>
+<text x="43" y="1226" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="800" fill="#fbbf24" text-anchor="start">TRANSVERSAL</text>
+<text x="155" y="1226" font-family="system-ui,Segoe UI,sans-serif" font-size="12.5" font-weight="500" fill="#e2e8f0" text-anchor="start">dkft pipeline-status audita hashes y linaje de todas las etapas (exit ≠ 0 si falta algo) · dkft config-validate valida config/*.yaml</text>
+<text x="155" y="1248" font-family="system-ui,Segoe UI,sans-serif" font-size="12.5" font-weight="500" fill="#e2e8f0" text-anchor="start">Validadores e imágenes fijadas por digest · sólo data/processed versionado (Git LFS) · nada se publica automáticamente en Hugging Face</text>
+</svg>
