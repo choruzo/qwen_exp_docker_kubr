@@ -263,6 +263,42 @@ def test_training_config_requires_positive_evaluation_settings(field: str) -> No
         validate_training_config(config)
 
 
+def test_training_config_accepts_eval_loss_best_model_restoration() -> None:
+    config = _config()
+    config["trainer"].update({
+        "eval_strategy": "steps",
+        "save_steps": 25,
+        "load_best_model_at_end": True,
+        "metric_for_best_model": "eval_loss",
+        "greater_is_better": False,
+    })
+    validate_training_config(config)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("metric_for_best_model", "loss", "select eval_loss"),
+        ("greater_is_better", True, "greater_is_better=false"),
+        ("save_steps", 300, "multiple of save_steps"),
+    ],
+)
+def test_training_config_rejects_invalid_best_model_contract(
+    field: str, value: object, message: str,
+) -> None:
+    config = _config()
+    config["trainer"].update({
+        "eval_strategy": "steps",
+        "save_steps": 25,
+        "load_best_model_at_end": True,
+        "metric_for_best_model": "eval_loss",
+        "greater_is_better": False,
+        field: value,
+    })
+    with pytest.raises(PipelineError, match=message):
+        validate_training_config(config)
+
+
 def test_training_config_rejects_non_reducing_oom_profile() -> None:
     config = _config()
     config["trainer"]["oom_fallback"]["profiles"][0] = {

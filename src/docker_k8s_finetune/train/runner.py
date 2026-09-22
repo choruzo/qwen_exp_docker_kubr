@@ -480,6 +480,9 @@ def _train_once(
             "eval_steps": int(smoke.get("eval_steps", 1)) if attempt.smoke_test else int(trainer_config["eval_steps"]),
             "packing": bool(trainer_config["packing"]),
             "train_sampling_strategy": str(trainer_config["train_sampling_strategy"]),
+            "load_best_model_at_end": bool(trainer_config.get("load_best_model_at_end", False)),
+            "metric_for_best_model": trainer_config.get("metric_for_best_model"),
+            "greater_is_better": trainer_config.get("greater_is_better"),
         },
         "processing": {
             "processor_class": type(processor).__name__,
@@ -534,6 +537,9 @@ def _train_once(
         logging_steps=1 if attempt.smoke_test else int(trainer_config["logging_steps"]),
         save_steps=int(smoke.get("save_steps", 1)) if attempt.smoke_test else int(trainer_config["save_steps"]),
         save_total_limit=int(trainer_config["save_total_limit"]),
+        load_best_model_at_end=bool(trainer_config.get("load_best_model_at_end", False)),
+        metric_for_best_model=trainer_config.get("metric_for_best_model"),
+        greater_is_better=trainer_config.get("greater_is_better"),
         report_to=str(trainer_config["report_to"]),
         seed=int(config["seed"]),
         data_seed=int(config["seed"]),
@@ -590,6 +596,13 @@ def _train_once(
         "packing": bool(trainer_config["packing"]),
         "train_sampling_strategy": str(trainer_config["train_sampling_strategy"]),
         "resumed_from": checkpoint,
+        "best_model_checkpoint": trainer.state.best_model_checkpoint,
+        "best_metric": trainer.state.best_metric,
+        "selected_model_source": (
+            trainer.state.best_model_checkpoint
+            if bool(trainer_config.get("load_best_model_at_end", False))
+            else "final_training_state"
+        ),
         "metrics": train_result.metrics,
         "evaluation_metrics": evaluation_metrics,
         "log_history": [dict(item) for item in trainer.state.log_history],
@@ -616,6 +629,7 @@ def _train_once(
         return result
 
     output = config["output"]
+    result["exported_model_source"] = result["selected_model_source"]
     adapter_dir = root / str(output["adapter"])
     merged_dir = root / str(output["merged"])
     gguf_dir = root / str(output["gguf"])

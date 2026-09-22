@@ -484,6 +484,20 @@ def validate_training_config(config: Mapping[str, Any]) -> None:
         raise PipelineError("per_device_eval_batch_size must be positive")
     if int(trainer.get("eval_steps", 0)) <= 0:
         raise PipelineError("eval_steps must be positive")
+    load_best = trainer.get("load_best_model_at_end", False)
+    if not isinstance(load_best, bool):
+        raise PipelineError("load_best_model_at_end must be boolean")
+    if load_best:
+        if str(trainer.get("eval_strategy")) != "steps":
+            raise PipelineError("Best-model restoration requires step evaluation")
+        if str(trainer.get("metric_for_best_model")) != "eval_loss":
+            raise PipelineError("Best-model restoration must select eval_loss")
+        if trainer.get("greater_is_better") is not False:
+            raise PipelineError("eval_loss best-model restoration requires greater_is_better=false")
+        if int(trainer.get("save_steps", 0)) <= 0:
+            raise PipelineError("Best-model restoration requires positive save_steps")
+        if int(trainer["eval_steps"]) % int(trainer["save_steps"]) != 0:
+            raise PipelineError("eval_steps must be a multiple of save_steps")
     fallback = trainer.get("oom_fallback", {})
     profiles = fallback.get("profiles")
     if fallback.get("enabled") is not True or not isinstance(profiles, list) or len(profiles) < 2:
