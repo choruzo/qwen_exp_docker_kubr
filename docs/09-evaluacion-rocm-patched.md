@@ -1,5 +1,7 @@
 # Evaluación ROCm parcheada: estado del 21-09-2026
 
+Actualización posterior: el modelo ajustado terminó el 22-09-2026, pero falló el gate de truncamiento. Véase [10-diagnostico-benchmark-rocm-2026-09-22.md](10-diagnostico-benchmark-rocm-2026-09-22.md).
+
 La evaluación congelada usa `config/benchmark.rocm.patched.yaml`. El split de test y los manifiestos de benchmark no se han modificado. Este documento es un estado **parcial**, no una comparación final de calidad.
 
 ## Comprobaciones cerradas

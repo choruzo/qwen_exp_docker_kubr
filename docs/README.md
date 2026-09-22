@@ -22,6 +22,7 @@ internos y el estado real de avance.
 | [07-invariantes-y-gates.md](07-invariantes-y-gates.md) | Todos los gates de corrección y qué rompe cada uno |
 | [08-decisiones-e-historial.md](08-decisiones-e-historial.md) | Decisiones de diseño y su motivo empírico, historial de commits |
 | [09-evaluacion-rocm-patched.md](09-evaluacion-rocm-patched.md) | Estado de la exportación y evaluación ROCm parcheada (21-09-2026) |
+| [10-diagnostico-benchmark-rocm-2026-09-22.md](10-diagnostico-benchmark-rocm-2026-09-22.md) | Comparación provisional, regresiones y gate fallido del modelo ajustado |
 
 ## Regla central del proyecto
 
@@ -31,7 +32,7 @@ internos y el estado real de avance.
 
 ## Atajo: estado en una línea
 
-El entrenamiento ROCm parcheado terminó y sus exports se verificaron; el benchmark
-ROCm sobre test sigue en curso y aún no hay comparación final ni juicio LLM.
-Estado reciente en [09-evaluacion-rocm-patched.md](09-evaluacion-rocm-patched.md);
-el [06-estado-actual.md](06-estado-actual.md) conserva el estado histórico anterior.
+El entrenamiento ROCm terminó y sus exports se verificaron. La inferencia cubrió el
+test, pero el modelo ajustado falló el gate de truncamiento (2,56 % frente a 1 %).
+No hay comparación final ni juicio LLM: ver [10-diagnostico-benchmark-rocm-2026-09-22.md](10-diagnostico-benchmark-rocm-2026-09-22.md).
+El [06-estado-actual.md](06-estado-actual.md) conserva el estado histórico anterior.
