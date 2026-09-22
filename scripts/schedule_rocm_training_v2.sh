@@ -21,7 +21,7 @@ container_state() { docker inspect -f '{{.State.Status}}' "$container" 2>/dev/nu
 
 case "${1:-}" in
   stop)
-    if (( 10#$clock >= 0800 && 10#$clock < 2330 )); then
+    if (( 10#$clock >= 800 && 10#$clock < 2330 )); then
       log 'Stop timer fired during training hours; ignoring stale event.'
       exit 0
     fi
@@ -32,7 +32,7 @@ case "${1:-}" in
     fi
     ;;
   start)
-    if (( 10#$clock < 0800 || 10#$clock >= 2330 )); then
+    if (( 10#$clock < 800 || 10#$clock >= 2330 )); then
       log 'Start timer fired during quiet hours; ignoring stale event.'
       exit 0
     fi
