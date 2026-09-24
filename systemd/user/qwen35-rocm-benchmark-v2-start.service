@@ -1,0 +1,7 @@
+[Unit]
+Description=Resume Qwen3.5 ROCm best-epoch v2 benchmark generation during daytime
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /mnt/datos/repos/qwen_exp_docker_kubr/scripts/schedule_rocm_benchmark_v2.sh start
+TimeoutStartSec=2min

@@ -351,7 +351,7 @@ def _summarize_vram(path: Path, run_id: str) -> dict[str, Any] | None:
 
 def _train_once(
     config: Mapping[str, Any], root: Path, attempt: TrainingAttempt,
-    *, export: bool, resume_from_latest: bool = False,
+    *, export: bool, export_gguf: bool = True, resume_from_latest: bool = False,
 ) -> dict[str, Any]:
     try:
         import torch
@@ -635,21 +635,28 @@ def _train_once(
     gguf_dir = root / str(output["gguf"])
     model.save_pretrained(adapter_dir)
     processor.save_pretrained(adapter_dir)
-    # The installed Unsloth exporter writes merged safetensors to the supplied
-    # directory and quantizations to <directory>_gguf. Reuse merged_dir and
-    # relocate only after both requested GGUF variants have been verified.
-    gguf_export = model.save_pretrained_gguf(
-        merged_dir,
-        processor,
-        quantization_method=list(output["gguf_quantizations"]),
-    )
-    finalized_gguf = finalize_gguf_export(
-        gguf_export,
-        configured_dir=gguf_dir,
-        merged_dir=merged_dir,
-        root=root,
-        required_quantizations=output["gguf_quantizations"],
-    )
+    # Export the merged safetensors first. GGUF generation is optional so the
+    # frozen benchmark can gate the more expensive quantization step.
+    finalized_gguf = None
+    if export_gguf:
+        gguf_export = model.save_pretrained_gguf(
+            merged_dir,
+            processor,
+            quantization_method=list(output["gguf_quantizations"]),
+        )
+        finalized_gguf = finalize_gguf_export(
+            gguf_export,
+            configured_dir=gguf_dir,
+            merged_dir=merged_dir,
+            root=root,
+            required_quantizations=output["gguf_quantizations"],
+        )
+    else:
+        model.save_pretrained_merged(
+            merged_dir,
+            processor,
+            save_method="merged_16bit",
+        )
     if split_statistics is None:
         raise PipelineError("Full export requires verified split statistics")
     manifest_path = root / str(output["manifest"])
@@ -666,16 +673,18 @@ def _train_once(
         "artifacts": {
             "adapter": artifact_files_manifest(adapter_dir, root),
             "merged": artifact_files_manifest(merged_dir, root),
-            "gguf": artifact_files_manifest(gguf_dir, root),
+            **({"gguf": artifact_files_manifest(gguf_dir, root)} if export_gguf else {}),
         },
-        "gguf_quantizations": list(output["gguf_quantizations"]),
+        "gguf_quantizations": list(output["gguf_quantizations"]) if export_gguf else [],
     }
     atomic_write_json(manifest_path, export_manifest)
     result["exports"] = {
         "adapter": str(adapter_dir),
         "merged": str(merged_dir),
-        "gguf": str(gguf_dir),
-        "quantizations": list(finalized_gguf["quantizations"]),
+        **({
+            "gguf": str(gguf_dir),
+            "quantizations": list(finalized_gguf["quantizations"]),
+        } if finalized_gguf is not None else {}),
         "manifest": str(manifest_path),
     }
     return result
@@ -683,7 +692,8 @@ def _train_once(
 
 def run_training(
     *, config_path: Path = Path("config/training.yaml"), smoke_test: bool = False,
-    export: bool = True, preflight_only: bool = False, resume_from_latest: bool = False,
+    export: bool = True, export_gguf: bool = True, preflight_only: bool = False,
+    resume_from_latest: bool = False,
 ) -> dict[str, Any]:
     if resume_from_latest and (smoke_test or preflight_only):
         raise PipelineError("Checkpoint resume requires a full training run")
@@ -726,6 +736,7 @@ def run_training(
                 root,
                 attempt,
                 export=export and not smoke_test,
+                export_gguf=export_gguf,
                 resume_from_latest=resume_from_latest,
             )
             if not smoke_test and (attempt.profile != "primary" or oom_profiles):

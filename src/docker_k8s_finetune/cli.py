@@ -132,6 +132,7 @@ def command_train(args: argparse.Namespace) -> int:
         config_path=Path(args.config),
         smoke_test=args.smoke_test,
         export=not args.no_export,
+        export_gguf=not args.no_gguf,
         preflight_only=args.preflight,
         resume_from_latest=args.resume_from_latest,
     )
@@ -246,6 +247,10 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser.add_argument("--config", default="config/training.yaml")
     train_parser.add_argument("--smoke-test", action="store_true")
     train_parser.add_argument("--no-export", action="store_true")
+    train_parser.add_argument(
+        "--no-gguf", action="store_true",
+        help="Export adapter and merged safetensors without GGUF quantization",
+    )
     train_parser.add_argument("--preflight", action="store_true")
     train_parser.add_argument("--resume-from-latest", action="store_true")
     train_parser.set_defaults(handler=command_train)

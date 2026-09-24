@@ -1,0 +1,11 @@
+[Unit]
+Description=Stop ROCm best-epoch v2 benchmark generation daily at 23:30 Madrid time
+
+[Timer]
+OnCalendar=*-*-* 23:30:00 Europe/Madrid
+AccuracySec=1s
+Persistent=true
+Unit=qwen35-rocm-benchmark-v2-stop.service
+
+[Install]
+WantedBy=timers.target
