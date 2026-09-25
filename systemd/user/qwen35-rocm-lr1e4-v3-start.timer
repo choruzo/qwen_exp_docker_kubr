@@ -1,0 +1,12 @@
+[Unit]
+Description=Resume Qwen3.5 ROCm LR 1e-4 v3 training every 10 minutes from 08:00 to 23:20 Madrid time
+
+[Timer]
+OnCalendar=*-*-* 08..22:00/10:00 Europe/Madrid
+OnCalendar=*-*-* 23:00..20/10:00 Europe/Madrid
+AccuracySec=1s
+Persistent=true
+Unit=qwen35-rocm-lr1e4-v3-start.service
+
+[Install]
+WantedBy=timers.target

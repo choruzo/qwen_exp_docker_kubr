@@ -98,14 +98,17 @@ ya incumple un gate anterior.
 El siguiente entrenamiento debe tratar la estabilidad como criterio de selección:
 
 1. Mantener los splits y la sonda de validación fijados en este ensayo.
-2. Reducir la agresividad del ajuste (primer candidato: LR `1e-4`, LoRA `r=16`,
-   `alpha=16`) y comparar contra el checkpoint actual con la misma sonda.
+2. Reducir primero sólo el LR a `1e-4`, manteniendo LoRA `r=32/alpha=32`, y
+   comparar contra el checkpoint actual con la misma sonda.
 3. Seleccionar checkpoints con una métrica compuesta que exija truncamiento <= 1 %
    además de `eval_loss`; no elegir sólo por pérdida teacher-forced.
 4. Revisar el peso de fuentes documentales con alta tasa de bucle si el problema
    persiste, sin modificar validación ni test.
 5. Sólo si se supera el gate, ejecutar juez/sintaxis y después una cuantización GGUF
    con inferencia real.
+
+Este experimento controlado quedó iniciado el 25-09-2026 y se documenta en
+[14-experimento-lr1e4-v3.md](14-experimento-lr1e4-v3.md).
 
 Todas las inferencias de diagnóstico se ejecutaron dentro de la ventana autorizada
 08:00–23:30 Europe/Madrid. Los temporizadores de entrenamiento y benchmark quedan

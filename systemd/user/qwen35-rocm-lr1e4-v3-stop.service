@@ -1,0 +1,7 @@
+[Unit]
+Description=Stop Qwen3.5 ROCm LR 1e-4 v3 training for quiet hours
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /mnt/datos/repos/qwen_exp_docker_kubr/scripts/schedule_rocm_training_lr1e4_v3.sh stop
+TimeoutStartSec=2min
