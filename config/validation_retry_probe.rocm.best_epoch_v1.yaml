@@ -1,0 +1,16 @@
+# Validation-only selective retry experiment; never replaces the frozen benchmark.
+version: 1
+source_probe: benchmarks/rocm/best_epoch_v2/validation_probe_v3/merged_frozen_results.json
+source_probe_sha256: c172683698e67f49d81f083fda09a95156f2a91a9a3e1640d96e0718f7b42cdb
+validation: data/processed/val.jsonl
+validation_sha256: bcf223584546fe573830470fcffedcffe92817034078808934bc892f6cbf90ac
+frozen_benchmark_config: config/benchmark.rocm.best_epoch_v2.yaml
+frozen_benchmark_sha256: 58d692e8290242cc4cade9bdc57c13b2b27496224d1dbab83baa5ee5802dddd0
+output: benchmarks/rocm/best_epoch_v2/validation_retry_probe_v1/merged_retry_1_2_results.json
+retry_repetition_penalty: 1.2
+variant:
+  backend: unsloth
+  model_path: artifacts/rocm/best_epoch_v2/merged
+  export_manifest: artifacts/rocm/best_epoch_v2/export_manifest.json
+  artifact: merged
+  load_in_4bit: false

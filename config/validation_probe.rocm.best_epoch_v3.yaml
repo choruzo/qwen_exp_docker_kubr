@@ -1,0 +1,32 @@
+# Diagnostic only: never replaces config/benchmark.rocm.best_epoch_v2.yaml.
+version: 3
+frozen_benchmark_config: config/benchmark.rocm.best_epoch_v2.yaml
+frozen_benchmark_sha256: 58d692e8290242cc4cade9bdc57c13b2b27496224d1dbab83baa5ee5802dddd0
+validation: data/processed/val.jsonl
+validation_sha256: bcf223584546fe573830470fcffedcffe92817034078808934bc892f6cbf90ac
+test_manifest: benchmarks/test_manifest.jsonl
+out_of_domain: benchmarks/fixtures/out_of_domain.jsonl
+sample_per_category: 10
+selection: reference_length_even_quantiles_by_category_v2
+generation_mode: deterministic_prompt_length_batches_v1
+outputs_dir: benchmarks/rocm/best_epoch_v2/validation_probe_v3
+variants:
+  adapter:
+    backend: unsloth
+    model_path: artifacts/rocm/best_epoch_v2/adapter
+    export_manifest: artifacts/rocm/best_epoch_v2/export_manifest.json
+    artifact: adapter
+    load_in_4bit: false
+  merged:
+    backend: unsloth
+    model_path: artifacts/rocm/best_epoch_v2/merged
+    export_manifest: artifacts/rocm/best_epoch_v2/export_manifest.json
+    artifact: merged
+    load_in_4bit: false
+policies:
+  frozen:
+    repetition_penalty: 1.0
+    retry_repetition_penalty: 1.1
+  repetition_control_v1:
+    repetition_penalty: 1.1
+    retry_repetition_penalty: 1.2
