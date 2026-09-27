@@ -1,0 +1,57 @@
+# Diagnostic only: checkpoint selection on validation; never reads held-out test responses.
+version: 3
+frozen_benchmark_config: config/benchmark.rocm.patched.yaml
+frozen_benchmark_sha256: fb5ca861612637f4b370e1430e990ec06d3679e6fe04a51acd34654d8aa8e98a
+validation: data/processed/val.jsonl
+validation_sha256: bcf223584546fe573830470fcffedcffe92817034078808934bc892f6cbf90ac
+test_manifest: benchmarks/test_manifest.jsonl
+out_of_domain: benchmarks/fixtures/out_of_domain.jsonl
+sample_per_category: 10
+selection: reference_length_even_quantiles_by_category_v2
+generation_mode: deterministic_prompt_length_batches_v1
+outputs_dir: benchmarks/rocm/lr1e4_v3/validation_probe
+variants:
+  baseline:
+    backend: unsloth
+    model_path: Modelo/Qwen3.5-4B
+    provenance_config: config/training.rocm.lr1e4_v3.yaml
+    load_in_4bit: false
+  checkpoint_500:
+    # Diagnostic checkpoint selection only; never used by the frozen test benchmark.
+    backend: unsloth
+    model_path: artifacts/rocm/lr1e4_v3/checkpoints/primary/checkpoint-500
+    load_in_4bit: false
+  checkpoint_1000:
+    # Diagnostic checkpoint selection only; never used by the frozen test benchmark.
+    backend: unsloth
+    model_path: artifacts/rocm/lr1e4_v3/checkpoints/primary/checkpoint-1000
+    load_in_4bit: false
+  checkpoint_2000:
+    # Diagnostic checkpoint selection only; never used by the frozen test benchmark.
+    backend: unsloth
+    model_path: artifacts/rocm/lr1e4_v3/checkpoints/primary/checkpoint-2000
+    load_in_4bit: false
+  checkpoint_3500:
+    # Diagnostic checkpoint selection only; never used by the frozen test benchmark.
+    backend: unsloth
+    model_path: artifacts/rocm/lr1e4_v3/checkpoints/primary/checkpoint-3500
+    load_in_4bit: false
+  adapter:
+    backend: unsloth
+    model_path: artifacts/rocm/lr1e4_v3/adapter
+    export_manifest: artifacts/rocm/lr1e4_v3/export_manifest.json
+    artifact: adapter
+    load_in_4bit: false
+  merged:
+    backend: unsloth
+    model_path: artifacts/rocm/lr1e4_v3/merged
+    export_manifest: artifacts/rocm/lr1e4_v3/export_manifest.json
+    artifact: merged
+    load_in_4bit: false
+policies:
+  frozen:
+    repetition_penalty: 1.0
+    retry_repetition_penalty: 1.1
+  repetition_control_v1:
+    repetition_penalty: 1.1
+    retry_repetition_penalty: 1.2

@@ -56,6 +56,20 @@ class ValidationProbeSelectionTests(unittest.TestCase):
             )
             self.assertEqual(lengths, [1, 3, 4])
 
+    def test_early_stop_requires_flag_and_truncation(self) -> None:
+        records = [{"truncated": False}, {"truncated": True}]
+        self.assertFalse(
+            probe.should_stop_after_batch(records, stop_on_truncation=False)
+        )
+        self.assertTrue(
+            probe.should_stop_after_batch(records, stop_on_truncation=True)
+        )
+        self.assertFalse(
+            probe.should_stop_after_batch(
+                [{"truncated": False}], stop_on_truncation=True
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

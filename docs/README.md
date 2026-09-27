@@ -5,7 +5,7 @@ en Docker y Kubernetes: extracción y limpieza de datos, fine-tuning con QLoRA/L
 comparación base vs. fusionado vs. GGUF sobre un test congelado.
 
 Esta carpeta documenta el proyecto tal y como está en el repositorio a fecha
-**2026-09-25**. El `Readme.md` de la raíz sigue siendo la guía
+**2026-09-27**. El `Readme.md` de la raíz sigue siendo la guía
 operativa de comandos; estos documentos explican el **por qué**, los contratos
 internos y el estado real de avance.
 
@@ -26,7 +26,7 @@ internos y el estado real de avance.
 | [11-diagnostico-pareado-rocm-v1.md](11-diagnostico-pareado-rocm-v1.md) | Diagnóstico pareado reproducible y protocolo del siguiente experimento en validación |
 | [12-ensayo-validacion-rocm-v1.md](12-ensayo-validacion-rocm-v1.md) | Comparación adaptador/fusionado, política alternativa y revisión del entrenamiento |
 | [13-diagnostico-best-epoch-v2.md](13-diagnostico-best-epoch-v2.md) | Benchmark del checkpoint 6994, sondas de estabilización y diagnóstico de bucles/EOS |
-| [14-experimento-lr1e4-v3.md](14-experimento-lr1e4-v3.md) | Contrato, operación y selección por estabilidad del entrenamiento controlado con LR 1e-4 |
+| [14-experimento-lr1e4-v3.md](14-experimento-lr1e4-v3.md) | Resultado, exportación verificada y selección fallida por estabilidad del entrenamiento con LR 1e-4 |
 
 ## Regla central del proyecto
 
@@ -36,8 +36,8 @@ internos y el estado real de avance.
 
 ## Atajo: estado en una línea
 
-El checkpoint 6994 mejora la semántica, pero falla el gate de truncamiento (4,14 %
-frente a 1 %). Está en ejecución un experimento controlado que reduce sólo el LR a
-`1e-4` y conserva todos los checkpoints para selección por estabilidad. No hay
-comparación final ni juicio LLM: ver [14-experimento-lr1e4-v3.md](14-experimento-lr1e4-v3.md).
+El experimento `LR=1e-4`, LoRA `r=32/alpha=32` terminó y mejora la similitud
+semántica pareada, pero introduce bucles de 2048 tokens ya desde el checkpoint 500.
+No se promociona a test ni a GGUF; el siguiente piloto reducirá LoRA a
+`r=16/alpha=16`: ver [14-experimento-lr1e4-v3.md](14-experimento-lr1e4-v3.md).
 El [06-estado-actual.md](06-estado-actual.md) conserva el estado histórico anterior.

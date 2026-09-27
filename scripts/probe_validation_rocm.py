@@ -111,7 +111,21 @@ def _load_inputs(root: Path, config: dict) -> tuple[list[dict], dict]:
     return selected, load_yaml(frozen_path)
 
 
-def run(root: Path, config_path: Path, variant: str, policy: str, *, limit: int | None = None, plan: bool = False) -> dict:
+def should_stop_after_batch(records: list[dict], *, stop_on_truncation: bool) -> bool:
+    """Return true only when early-stop was requested and a saved record truncated."""
+    return stop_on_truncation and any(bool(record.get("truncated")) for record in records)
+
+
+def run(
+    root: Path,
+    config_path: Path,
+    variant: str,
+    policy: str,
+    *,
+    limit: int | None = None,
+    plan: bool = False,
+    stop_on_truncation: bool = False,
+) -> dict:
     config = load_yaml(config_path)
     if config.get("version") not in (1, 2, 3):
         raise ValueError("Unsupported validation probe contract")
@@ -206,6 +220,10 @@ def run(root: Path, config_path: Path, variant: str, policy: str, *, limit: int 
             for position, (record, result) in enumerate(zip(chunk, chunk_results)):
                 append_result(record, result, offset + position)
             atomic_write_json(output_path, payload)
+            if should_stop_after_batch(
+                payload["records"], stop_on_truncation=stop_on_truncation
+            ):
+                break
     else:
         for index in range(start, len(selected)):
             record = selected[index]
@@ -216,6 +234,10 @@ def run(root: Path, config_path: Path, variant: str, policy: str, *, limit: int 
             )
             append_result(record, result, index)
             atomic_write_json(output_path, payload)
+            if should_stop_after_batch(
+                payload["records"][-1:], stop_on_truncation=stop_on_truncation
+            ):
+                break
     return {"output": str(output_path), "count": len(payload["records"]), "truncated": sum(record["truncated"] for record in payload["records"])}
 
 
@@ -226,9 +248,22 @@ def main() -> None:
     parser.add_argument("--policy", default="frozen")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--plan", action="store_true")
+    parser.add_argument(
+        "--stop-on-truncation",
+        action="store_true",
+        help="Stop after persisting the first batch containing a truncated response.",
+    )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    print(json.dumps(run(root, root / args.config, args.variant, args.policy, limit=args.limit, plan=args.plan), ensure_ascii=False, indent=2))
+    print(json.dumps(run(
+        root,
+        root / args.config,
+        args.variant,
+        args.policy,
+        limit=args.limit,
+        plan=args.plan,
+        stop_on_truncation=args.stop_on_truncation,
+    ), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
