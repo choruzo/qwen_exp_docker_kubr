@@ -27,6 +27,8 @@ internos y el estado real de avance.
 | [12-ensayo-validacion-rocm-v1.md](12-ensayo-validacion-rocm-v1.md) | Comparación adaptador/fusionado, política alternativa y revisión del entrenamiento |
 | [13-diagnostico-best-epoch-v2.md](13-diagnostico-best-epoch-v2.md) | Benchmark del checkpoint 6994, sondas de estabilización y diagnóstico de bucles/EOS |
 | [14-experimento-lr1e4-v3.md](14-experimento-lr1e4-v3.md) | Resultado, exportación verificada y selección fallida por estabilidad del entrenamiento con LR 1e-4 |
+| [15-diagnostico-piloto-lr1e4-r16-v1.md](15-diagnostico-piloto-lr1e4-r16-v1.md) | Piloto r16/alpha16: fallo en el caso centinela de Argo CD y concentración de listas en `reverse_instruction` |
+| [16-auditoria-reverse-instruction-v1.md](16-auditoria-reverse-instruction-v1.md) | Auditoría de formato de `reverse_instruction`: fragmentos de docs, changelogs y listas para preguntas estrechas |
 
 ## Regla central del proyecto
 
