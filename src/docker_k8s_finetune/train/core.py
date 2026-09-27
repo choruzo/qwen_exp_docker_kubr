@@ -420,6 +420,7 @@ def build_attempt(
             output_dir=(
                 root / str(config["output"]["checkpoints"]) / str(fallback_config["name"])
             ),
+            max_steps=int(trainer.get("max_steps", -1)),
             profile=str(fallback_config["name"]),
         )
     return TrainingAttempt(
@@ -427,6 +428,7 @@ def build_attempt(
         batch_size=int(trainer["per_device_train_batch_size"]),
         gradient_accumulation_steps=int(trainer["gradient_accumulation_steps"]),
         output_dir=root / str(config["output"]["checkpoints"]) / "primary",
+        max_steps=int(trainer.get("max_steps", -1)),
         profile="primary",
     )
 
@@ -484,6 +486,8 @@ def validate_training_config(config: Mapping[str, Any]) -> None:
         raise PipelineError("per_device_eval_batch_size must be positive")
     if int(trainer.get("eval_steps", 0)) <= 0:
         raise PipelineError("eval_steps must be positive")
+    if "max_steps" in trainer and int(trainer["max_steps"]) <= 0:
+        raise PipelineError("max_steps must be positive when configured")
     load_best = trainer.get("load_best_model_at_end", False)
     if not isinstance(load_best, bool):
         raise PipelineError("load_best_model_at_end must be boolean")

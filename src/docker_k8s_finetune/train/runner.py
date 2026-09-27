@@ -473,6 +473,7 @@ def _train_once(
         ),
         "training_profile": {
             "name": attempt.profile,
+            "max_steps": attempt.max_steps,
             "max_seq_length": attempt.max_seq_length,
             "batch_size": attempt.batch_size,
             "gradient_accumulation_steps": attempt.gradient_accumulation_steps,

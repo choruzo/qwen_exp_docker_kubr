@@ -159,10 +159,14 @@ def test_local_model_git_revision_uses_command_scoped_safe_directory(
 
 def test_attempts_and_latest_checkpoint_are_deterministic(tmp_path: Path) -> None:
     config = _config()
+    config["trainer"]["max_steps"] = 500
     primary = build_attempt(config, tmp_path, smoke_test=False)
     fallback_4k = build_attempt(config, tmp_path, smoke_test=False, fallback_index=0)
     fallback_2k = build_attempt(config, tmp_path, smoke_test=False, fallback_index=1)
     assert primary.effective_batch_size == 16
+    assert primary.max_steps == 500
+    assert fallback_4k.max_steps == 500
+    assert fallback_2k.max_steps == 500
     assert fallback_4k.max_seq_length == 4096
     assert fallback_2k.max_seq_length == 2048
     assert primary.output_dir.name == "primary"
@@ -245,6 +249,15 @@ def test_training_config_rejects_manual_targets() -> None:
     validate_training_config(config)
     config["lora"]["target_modules"] = ["q_proj"]
     with pytest.raises(PipelineError, match="hybrid attention"):
+        validate_training_config(config)
+
+
+def test_training_config_requires_positive_optional_max_steps() -> None:
+    config = _config()
+    config["trainer"]["max_steps"] = 500
+    validate_training_config(config)
+    config["trainer"]["max_steps"] = 0
+    with pytest.raises(PipelineError, match="max_steps must be positive"):
         validate_training_config(config)
 
 
