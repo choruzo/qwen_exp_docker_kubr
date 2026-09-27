@@ -91,3 +91,35 @@ versión y listas abiertas de flags.
   sólo train cambia la distribución respecto al test congelado, y la similitud semántica
   premia reproducir fragmentos crudos. Una mejora en estabilidad podría verse como
   pérdida de similitud en esos casos; hay que decidirlo antes de reentrenar.
+
+## Train derivado sin nivel A
+
+`scripts/build_filtered_train.py` genera `data/derived/train.ri_tier_a_filtered.v1.jsonl`.
+Primero verifica el `train.jsonl` congelado contra `split_statistics.json`, recalcula las
+flags de nivel A con los umbrales fijados y copia byte a byte las líneas conservadas.
+El padre no se modifica: SHA-256 `0881e496673e276849c617e7ec08627727d0e83618c54a2763045f2e012a36c3` antes y después.
+
+| Identidad | Valor |
+|---|---|
+| Registros | 54 227 (55 999 − 1 772; 1 772 hashes únicos) |
+| SHA-256 derivado | `717a65890ccb5052ff9dc0fe8812d2293353f2ad00f91809a101a2773cade2d5` |
+| Bytes | 169 387 281 |
+| Lista de exclusión | `data/derived/train.ri_tier_a_filtered.v1.excluded_hashes.txt`, SHA-256 `c075b3525d7428a32164e62ad3853ac9999c2c7b8c6002a9f25616ad47f810f6` |
+
+Por fuente se excluyen `docker_docs` 1 098, `kubernetes_docs` 284, `cert_manager_docs` 108,
+`argocd_docs` 104 y 178 del resto. Por categoría: troubleshooting 918, concepto 560,
+arquitectura 167, comando_cli 116 y dockerfile 11. **`comando_cli` pierde el 13,7 % de sus
+849 registros** y ya estaba infrarrepresentada (1,5 % de train frente a 10 % de test).
+
+El JSONL derivado se ignora en Git porque se reproduce desde el padre. Sí se versionan el
+manifiesto y la lista de hashes excluidos.
+
+### Contrato en el runner
+
+Una configuración puede usarlo con `data.train_derivation`, en la que fija `parent`,
+`excluded_hashes`, `excluded_sha256`, `excluded_records`, `sha256`, `bytes` y `count`. Antes
+de entrenar, `_verify_train_derivation` exige cuatro cosas: que el padre coincida con
+`split_statistics.json`, que la lista de exclusión coincida con su hash, que cada hash
+excluido exista en el padre y que el derivado sea exactamente el padre sin esas líneas.
+El hash derivado pasa al contrato de checkpoints y al manifiesto de exportación junto con
+`parent_sha256`. Validación y test no cambian.

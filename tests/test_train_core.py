@@ -644,6 +644,74 @@ def test_rocm_validation_redaction_is_exactly_pinned(tmp_path: Path) -> None:
         train_runner._verify_final_split(config, tmp_path)
 
 
+def _derived_train_fixture(tmp_path: Path) -> tuple[dict, Path]:
+    from docker_k8s_finetune.io import file_sha256
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    records = []
+    for index in range(3):
+        record = _record()
+        record["meta"]["content_hash"] = f"hash-{index}"
+        records.append(json.dumps(record) + "\n")
+    (data_dir / "train.jsonl").write_text("".join(records), encoding="utf-8", newline="\n")
+    (data_dir / "derived.jsonl").write_text(records[0] + records[2], encoding="utf-8", newline="\n")
+    (data_dir / "excluded.txt").write_text("hash-1\n", encoding="utf-8", newline="\n")
+    for filename in ("val.jsonl", "test.jsonl"):
+        (data_dir / filename).write_text(records[0], encoding="utf-8", newline="\n")
+    statistics = {"provisional": False, "outputs": {
+        "train": {"sha256": file_sha256(data_dir / "train.jsonl"), "count": 3},
+        "validation": {"sha256": file_sha256(data_dir / "val.jsonl")},
+        "test": {"sha256": file_sha256(data_dir / "test.jsonl")},
+    }}
+    (data_dir / "statistics.json").write_text(json.dumps(statistics), encoding="utf-8")
+    config = {"data": {
+        "train": "data/derived.jsonl", "validation": "data/val.jsonl",
+        "test": "data/test.jsonl", "split_statistics": "data/statistics.json",
+        "train_derivation": {
+            "parent": "data/train.jsonl",
+            "excluded_hashes": "data/excluded.txt",
+            "excluded_sha256": file_sha256(data_dir / "excluded.txt"),
+            "excluded_records": 1,
+            "sha256": file_sha256(data_dir / "derived.jsonl"),
+            "bytes": (data_dir / "derived.jsonl").stat().st_size,
+            "count": 2,
+        },
+    }}
+    return config, data_dir
+
+
+def test_derived_train_is_rebuilt_from_frozen_parent(tmp_path: Path) -> None:
+    config, data_dir = _derived_train_fixture(tmp_path)
+    parent_sha256 = json.loads((data_dir / "statistics.json").read_text())["outputs"]["train"]["sha256"]
+    verified = train_runner._verify_final_split(config, tmp_path)
+    train = verified["outputs"]["train"]
+    assert train["sha256"] == config["data"]["train_derivation"]["sha256"]
+    assert train["parent_sha256"] == parent_sha256
+    assert train["count"] == 2
+    assert train["derivation"]["excluded_records"] == 1
+
+
+def test_derived_train_rejects_tampered_exclusions(tmp_path: Path) -> None:
+    from docker_k8s_finetune.io import file_sha256
+
+    config, data_dir = _derived_train_fixture(tmp_path)
+    (data_dir / "excluded.txt").write_text("hash-2\n", encoding="utf-8", newline="\n")
+    with pytest.raises(PipelineError, match="exclusion list differs"):
+        train_runner._verify_final_split(config, tmp_path)
+    config["data"]["train_derivation"]["excluded_sha256"] = file_sha256(data_dir / "excluded.txt")
+    with pytest.raises(PipelineError, match="not the parent minus"):
+        train_runner._verify_final_split(config, tmp_path)
+
+
+def test_derived_train_requires_frozen_parent(tmp_path: Path) -> None:
+    config, data_dir = _derived_train_fixture(tmp_path)
+    with (data_dir / "train.jsonl").open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write("\n")
+    with pytest.raises(PipelineError, match="parent differs"):
+        train_runner._verify_final_split(config, tmp_path)
+
+
 def test_rocm_math_library_provenance_pins_patched_binaries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

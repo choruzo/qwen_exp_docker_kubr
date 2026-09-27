@@ -18,3 +18,7 @@ benchmarks/rocm/**/*_results.json
 # Local raw benchmark outputs and background-run logs; reports remain versionable.
 /.*.out.log
 /.*.err.log
+
+# Derived splits are rebuilt from the frozen parent; only manifests and exclusion lists are versioned.
+data/derived/*.jsonl
+data/derived/*.tmp

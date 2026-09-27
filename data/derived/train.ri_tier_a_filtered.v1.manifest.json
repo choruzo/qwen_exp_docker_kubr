@@ -1,0 +1,204 @@
+{
+  "version": 1,
+  "name": "train.ri_tier_a_filtered.v1",
+  "parent": {
+    "path": "data/processed/train.jsonl",
+    "sha256": "0881e496673e276849c617e7ec08627727d0e83618c54a2763045f2e012a36c3",
+    "bytes": 174710516,
+    "count": 55999
+  },
+  "criterion": {
+    "normalization": "reverse_instruction",
+    "any_flag": [
+      "long_list",
+      "narrow_question_list_answer",
+      "release_notes"
+    ],
+    "thresholds": {
+      "bullets": 10,
+      "length_ratio": 15.0,
+      "term_recall": 0.3,
+      "versions": 10,
+      "narrow_list_bullets": 5
+    },
+    "audit_script_sha256": "35dd3d83e9ff798c468901886ae65fd39998df638c85b8b67dd57600566a54dd",
+    "reference": "docs/16-auditoria-reverse-instruction-v1.md"
+  },
+  "excluded": {
+    "path": "data/derived/train.ri_tier_a_filtered.v1.excluded_hashes.txt",
+    "sha256": "c075b3525d7428a32164e62ad3853ac9999c2c7b8c6002a9f25616ad47f810f6",
+    "records": 1772,
+    "unique_hashes": 1772,
+    "by_source_category": [
+      {
+        "source": "argocd_docs",
+        "category": "comando_cli",
+        "records": 11
+      },
+      {
+        "source": "argocd_docs",
+        "category": "concepto",
+        "records": 19
+      },
+      {
+        "source": "argocd_docs",
+        "category": "troubleshooting",
+        "records": 74
+      },
+      {
+        "source": "cert_manager_docs",
+        "category": "arquitectura",
+        "records": 8
+      },
+      {
+        "source": "cert_manager_docs",
+        "category": "comando_cli",
+        "records": 6
+      },
+      {
+        "source": "cert_manager_docs",
+        "category": "concepto",
+        "records": 32
+      },
+      {
+        "source": "cert_manager_docs",
+        "category": "troubleshooting",
+        "records": 62
+      },
+      {
+        "source": "containerd_docs",
+        "category": "arquitectura",
+        "records": 13
+      },
+      {
+        "source": "containerd_docs",
+        "category": "concepto",
+        "records": 13
+      },
+      {
+        "source": "containerd_docs",
+        "category": "troubleshooting",
+        "records": 16
+      },
+      {
+        "source": "coredns_docs",
+        "category": "arquitectura",
+        "records": 12
+      },
+      {
+        "source": "coredns_docs",
+        "category": "concepto",
+        "records": 5
+      },
+      {
+        "source": "coredns_docs",
+        "category": "troubleshooting",
+        "records": 18
+      },
+      {
+        "source": "docker_docs",
+        "category": "arquitectura",
+        "records": 71
+      },
+      {
+        "source": "docker_docs",
+        "category": "comando_cli",
+        "records": 75
+      },
+      {
+        "source": "docker_docs",
+        "category": "concepto",
+        "records": 407
+      },
+      {
+        "source": "docker_docs",
+        "category": "dockerfile",
+        "records": 11
+      },
+      {
+        "source": "docker_docs",
+        "category": "troubleshooting",
+        "records": 534
+      },
+      {
+        "source": "helm_docs",
+        "category": "comando_cli",
+        "records": 5
+      },
+      {
+        "source": "helm_docs",
+        "category": "concepto",
+        "records": 6
+      },
+      {
+        "source": "helm_docs",
+        "category": "troubleshooting",
+        "records": 13
+      },
+      {
+        "source": "ingress_nginx_docs",
+        "category": "concepto",
+        "records": 4
+      },
+      {
+        "source": "ingress_nginx_docs",
+        "category": "troubleshooting",
+        "records": 15
+      },
+      {
+        "source": "istio_docs",
+        "category": "arquitectura",
+        "records": 3
+      },
+      {
+        "source": "istio_docs",
+        "category": "comando_cli",
+        "records": 5
+      },
+      {
+        "source": "istio_docs",
+        "category": "concepto",
+        "records": 5
+      },
+      {
+        "source": "istio_docs",
+        "category": "troubleshooting",
+        "records": 45
+      },
+      {
+        "source": "kubernetes_docs",
+        "category": "arquitectura",
+        "records": 60
+      },
+      {
+        "source": "kubernetes_docs",
+        "category": "comando_cli",
+        "records": 14
+      },
+      {
+        "source": "kubernetes_docs",
+        "category": "concepto",
+        "records": 69
+      },
+      {
+        "source": "kubernetes_docs",
+        "category": "troubleshooting",
+        "records": 141
+      }
+    ]
+  },
+  "output": {
+    "path": "data/derived/train.ri_tier_a_filtered.v1.jsonl",
+    "sha256": "717a65890ccb5052ff9dc0fe8812d2293353f2ad00f91809a101a2773cade2d5",
+    "bytes": 169387281,
+    "count": 54227,
+    "by_category": {
+      "arquitectura": 1205,
+      "comando_cli": 733,
+      "concepto": 4273,
+      "dockerfile": 851,
+      "generacion_yaml": 10957,
+      "troubleshooting": 36208
+    }
+  }
+}

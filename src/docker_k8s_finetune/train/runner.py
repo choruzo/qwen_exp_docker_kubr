@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import hashlib
 from copy import deepcopy
 import json
 import logging
@@ -143,6 +144,67 @@ def _verify_validation_redaction(
     return reconciled
 
 
+def _verify_train_derivation(
+    config: Mapping[str, Any], statistics: Mapping[str, Any], root: Path,
+) -> dict[str, Any]:
+    """Verify a pinned train subset rebuilt from the frozen parent minus excluded hashes.
+
+    The parent must still match split_statistics.json; the derived file must equal, byte for
+    byte, the parent lines whose content_hash is not in the pinned exclusion list.
+    """
+    data = config["data"]
+    derivation = data["train_derivation"]
+    required = ("parent", "excluded_hashes", "excluded_sha256", "excluded_records", "sha256", "bytes", "count")
+    if not isinstance(derivation, Mapping) or any(key not in derivation for key in required):
+        raise PipelineError("train_derivation must pin parent, exclusion list and derived identity")
+    recorded = statistics.get("outputs", {}).get("train", {})
+    parent = root / str(derivation["parent"])
+    derived = root / str(data["train"])
+    excluded_path = root / str(derivation["excluded_hashes"])
+    for path in (parent, derived, excluded_path):
+        if not path.is_file():
+            raise PipelineError(f"Train derivation input is missing: {path}")
+    if file_sha256(parent) != recorded.get("sha256"):
+        raise PipelineError("Train derivation parent differs from split_statistics.json")
+    if file_sha256(excluded_path) != str(derivation["excluded_sha256"]):
+        raise PipelineError("Train derivation exclusion list differs from its pinned hash")
+    if (file_sha256(derived), derived.stat().st_size) != (str(derivation["sha256"]), int(derivation["bytes"])):
+        raise PipelineError("Derived train split differs from its pinned hash")
+    excluded = {line.strip() for line in excluded_path.read_text(encoding="utf-8").splitlines() if line.strip()}
+
+    rebuilt = hashlib.sha256()
+    kept = removed = 0
+    matched: set[str] = set()
+    try:
+        with parent.open("rb") as handle:
+            for raw in handle:
+                if not raw.strip():
+                    continue
+                record_hash = str(json.loads(raw)["meta"]["content_hash"])
+                if record_hash in excluded:
+                    matched.add(record_hash)
+                    removed += 1
+                    continue
+                rebuilt.update(raw)
+                kept += 1
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise PipelineError("Cannot rebuild the derived train split from its parent") from exc
+    if matched != excluded or removed != int(derivation["excluded_records"]):
+        raise PipelineError("Train derivation exclusion list does not match the parent records")
+    if rebuilt.hexdigest() != str(derivation["sha256"]) or kept != int(derivation["count"]):
+        raise PipelineError("Derived train split is not the parent minus the excluded hashes")
+    return {
+        "count": kept,
+        "bytes": derived.stat().st_size,
+        "sha256": str(derivation["sha256"]),
+        "parent_sha256": recorded["sha256"],
+        "derivation": {
+            "excluded_sha256": str(derivation["excluded_sha256"]),
+            "excluded_records": removed,
+        },
+    }
+
+
 def _verify_final_split(config: Mapping[str, Any], root: Path) -> dict[str, Any]:
     data = config["data"]
     statistics_path = root / str(data["split_statistics"])
@@ -154,7 +216,12 @@ def _verify_final_split(config: Mapping[str, Any], root: Path) -> dict[str, Any]
         raise PipelineError(f"Cannot read final split statistics: {exc}") from exc
     if statistics.get("provisional"):
         raise PipelineError("Refusing full training on provisional dataset splits")
+    derived_train = None
+    if "train_derivation" in data:
+        derived_train = _verify_train_derivation(config, statistics, root)
     for split_name, data_key in (("train", "train"), ("validation", "validation"), ("test", "test")):
+        if split_name == "train" and derived_train is not None:
+            continue
         path = root / str(data[data_key])
         expected = statistics.get("outputs", {}).get(split_name, {}).get("sha256")
         if not path.is_file() or not expected:
@@ -164,6 +231,9 @@ def _verify_final_split(config: Mapping[str, Any], root: Path) -> dict[str, Any]
                 statistics = _verify_validation_redaction(config, statistics, path)
             else:
                 raise PipelineError(f"Final {split_name} split hash differs from split_statistics.json")
+    if derived_train is not None:
+        statistics = deepcopy(dict(statistics))
+        statistics["outputs"]["train"] = derived_train
     return statistics
 
 
